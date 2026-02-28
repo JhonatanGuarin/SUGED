@@ -57,9 +57,15 @@ export default function Layout() {
           </div>
         </div>
 
-        {/* Perfil del Usuario */}
-        <div className="p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20">
-          <div className="w-12 h-12 rounded-full bg-slate-800 border-2 border-[#FFCC29] overflow-hidden flex-shrink-0">
+        {/* Perfil del Usuario (Clickeable hacia el Dashboard) */}
+        <button 
+          onClick={() => {
+            navigate('/'); // Asegúrate de que '/' sea la ruta de tu Inicio. Si es '/dashboard', cámbialo aquí.
+            setIsMobileMenuOpen(false); // Para que se cierre el menú en celulares al hacer clic
+          }}
+          className="w-full text-left p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20 hover:bg-black/40 transition-colors cursor-pointer group"
+        >
+          <div className="w-12 h-12 rounded-full bg-slate-800 border-2 border-[#FFCC29] group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0 shadow-sm">
             {session?.user?.user_metadata?.avatar_url ? (
               <img src={session.user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
@@ -67,13 +73,15 @@ export default function Layout() {
             )}
           </div>
           <div className="overflow-hidden">
-            <p className="text-sm font-bold text-white truncate">{session?.user?.user_metadata?.full_name || 'Usuario'}</p>
+            <p className="text-sm font-bold text-white truncate group-hover:text-[#FFCC29] transition-colors">
+              {session?.user?.user_metadata?.full_name || 'Usuario'}
+            </p>
             <span className="inline-block mt-1 px-2 py-0.5 bg-[#FFCC29]/10 text-[#FFCC29] text-[10px] uppercase font-bold tracking-wider rounded-md border border-[#FFCC29]/20">
               {perfil?.rol === 'ADMIN' ? 'Administrador' : 
               perfil?.rol === 'MEMBER_UPTC' ? 'Miembro UPTC' : 'Usuario Externo'}
             </span>
           </div>
-        </div>
+        </button>
 
         {/* Navegación Principal */}
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
