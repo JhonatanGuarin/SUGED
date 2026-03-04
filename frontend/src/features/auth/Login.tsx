@@ -1,20 +1,38 @@
 import { useState } from 'react';
 import { supabase } from '../../app/supabase';
-import { MapPin, Calendar, ShieldCheck, Info, X, Code2, Database, LayoutTemplate, Server } from 'lucide-react';
+import { MapPin, Calendar, ShieldCheck, Info, X, Code2, Database, LayoutTemplate, Server, WifiOff } from 'lucide-react';
+import { toast } from 'sonner'; // Importamos la librería de notificaciones
 
 export default function Login() {
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [cargando, setCargando] = useState(false);
 
   const iniciarSesionConGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin 
-      }
-    });
+    setCargando(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin 
+        }
+      });
 
-    if (error) {
-      console.error('Hubo un error al iniciar sesión:', error.message);
+      if (error) throw error;
+      
+      // Nota: Si todo sale bien, Supabase redirige la página, así que no necesitamos
+      // mostrar un mensaje de éxito aquí porque la página se recargará.
+
+    } catch (error: any) {
+      console.error('Error Login:', error);
+      
+      // Notificación elegante de error
+      toast.error('No se pudo iniciar sesión', {
+        description: error.message || 'Verifica tu conexión a internet e inténtalo de nuevo.',
+        icon: <WifiOff size={18} />, // Icono opcional para hacerlo más visual
+        duration: 5000, // Dura 5 segundos
+      });
+      
+      setCargando(false);
     }
   };
 
@@ -23,10 +41,12 @@ export default function Login() {
       
       {/* PANEL DE MARCA (Izquierda en PC, Arriba en Móvil) */}
       <div className="lg:w-5/12 bg-[#1A1A1A] text-white flex flex-col justify-center p-8 md:p-16 relative overflow-hidden">
+        {/* Decoración de fondo sutil */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#FFCC29] opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-white opacity-5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
 
         <div className="relative z-10 max-w-md mx-auto w-full">
+          {/* Logo */}
           <div className="w-16 h-16 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-[#1A1A1A] text-4xl shadow-lg shadow-[#FFCC29]/20 mb-8">
             S
           </div>
@@ -42,6 +62,7 @@ export default function Login() {
             El sistema oficial para la gestión, reserva y control de escenarios deportivos de la universidad.
           </p>
 
+          {/* Características de la plataforma */}
           <div className="space-y-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[#FFCC29] shrink-0">
@@ -89,14 +110,21 @@ export default function Login() {
           
           <button
             onClick={iniciarSesionConGoogle}
-            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-200 text-[#1A1A1A] px-6 py-4 rounded-xl hover:bg-slate-50 hover:border-[#FFCC29] hover:shadow-md transition-all duration-300 font-bold text-lg group"
+            disabled={cargando}
+            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-200 text-[#1A1A1A] px-6 py-4 rounded-xl hover:bg-slate-50 hover:border-[#FFCC29] hover:shadow-md transition-all duration-300 font-bold text-lg group disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <img 
-              src="https://www.svgrepo.com/show/475656/google-color.svg" 
-              alt="Google Logo" 
-              className="w-6 h-6 group-hover:scale-110 transition-transform duration-300" 
-            />
-            Continuar con Google
+            {cargando ? (
+              <span className="animate-pulse">Conectando...</span>
+            ) : (
+              <>
+                <img 
+                  src="https://www.svgrepo.com/show/475656/google-color.svg" 
+                  alt="Google Logo" 
+                  className="w-6 h-6 group-hover:scale-110 transition-transform duration-300" 
+                />
+                Continuar con Google
+              </>
+            )}
           </button>
 
           <div className="mt-10 pt-6 border-t border-slate-100">
@@ -117,9 +145,10 @@ export default function Login() {
 
       {/* MODAL: ACERCA DE SUGED */}
       {isAboutOpen && (
-        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             
+            {/* Cabecera del Modal */}
             <div className="p-6 border-b border-white/5 flex justify-between items-start">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-xl">S</div>
@@ -131,6 +160,7 @@ export default function Login() {
               <button onClick={() => setIsAboutOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
             </div>
 
+            {/* Cuerpo del Modal */}
             <div className="p-6 space-y-6">
               <div>
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desarrollo y Arquitectura</h3>
@@ -159,6 +189,7 @@ export default function Login() {
               </div>
             </div>
 
+            {/* Pie del Modal */}
             <div className="p-4 bg-black/40 text-center border-t border-white/5">
               <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">© 2026 Universidad Pedagógica y Tecnológica de Colombia</p>
             </div>

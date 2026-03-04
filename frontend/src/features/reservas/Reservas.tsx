@@ -5,6 +5,8 @@ import { useAuth } from '../../app/AuthContext';
 import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Upload, Receipt, Ticket, History, ScanLine, AlertCircle, Search, Filter } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
+import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 
 interface Escenario { id: string; nombre: string; tarifa_hora: number; imagen_url: string; }
 interface BloqueDisponible { hora_inicio: string; hora_fin: string; etiqueta: string; }
@@ -61,23 +63,38 @@ export default function Reservas() {
   };
 
   const manejarCambioEstado = async (reserva: any, nuevoEstado: string) => {
-    let mensajeConfirmacion = `¿Seguro que deseas marcar esta reserva como ${nuevoEstado}?`;
+    const esCritico = nuevoEstado === 'CANCELADA' && reserva.usuarios?.rol !== 'MEMBER_UPTC';
     
-    // Alerta profesional sin emojis
-    if (nuevoEstado === 'CANCELADA' && reserva.usuarios?.rol !== 'MEMBER_UPTC') {
-      mensajeConfirmacion = `¡ADVERTENCIA DE SEGURIDAD!\n\nEstás a punto de CANCELAR una reserva PAGADA por un usuario externo.\n\nEl sistema revocará su acceso. ¿Ya te comunicaste con esta persona para coordinar la devolución o reprogramación?\n\nSi estás seguro de proceder, presiona Aceptar.`;
-    }
+    // CONFIGURACIÓN DINÁMICA DEL MODAL
+    const confirmacion = await Swal.fire({
+      title: esCritico ? '¡ADVERTENCIA CRÍTICA!' : 'Confirmar Acción',
+      html: esCritico 
+        ? `Estás a punto de <b>CANCELAR</b> una reserva <b>PAGADA</b> por un usuario externo.<br/><br/>¿Ya te comunicaste con esta persona para coordinar la devolución o reprogramación?`
+        : `¿Seguro que deseas marcar esta reserva como <b>${nuevoEstado.replace('_', ' ')}</b>?`,
+      icon: esCritico ? 'error' : 'warning',
+      showCancelButton: true,
+      confirmButtonColor: esCritico ? '#ef4444' : '#FFCC29', // Rojo si es crítico, Amarillo si es normal
+      cancelButtonColor: '#64748b',
+      confirmButtonText: esCritico ? 'Sí, cancelar reserva' : 'Sí, confirmar',
+      cancelButtonText: 'Atrás',
+      color: '#1A1A1A'
+    });
 
-    if (!window.confirm(mensajeConfirmacion)) return;
+    if (!confirmacion.isConfirmed) return;
+
+    const toastId = toast.loading('Actualizando estado...');
 
     try {
       const res = await fetch(`http://localhost:3000/api/reservas/${reserva.id}/estado`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: nuevoEstado })
       });
       if (!res.ok) throw new Error((await res.json()).error);
-      alert(`Reserva ${nuevoEstado} con éxito`);
+      
+      toast.success(`Reserva ${nuevoEstado} con éxito`, { id: toastId });
       cargarReservasAdmin(); 
-    } catch (error: any) { alert(error.message); }
+    } catch (error: any) { 
+      toast.error('Error al actualizar', { description: error.message, id: toastId }); 
+    }
   };
 
   const procesarQR = async (textoLector: string) => {
@@ -99,8 +116,12 @@ export default function Reservas() {
       }
 
       setResultadoEscaneo({ valido: true, mensaje: 'Acceso Permitido', datos: data as any });
+      // Notificación extra para el administrador escaneando
+      toast.success('Pase validado correctamente');
+
     } catch (err) {
       setResultadoEscaneo({ valido: false, mensaje: 'Error de lectura.' });
+      toast.error('Ocurrió un error al procesar el código');
     }
   };
 
@@ -120,8 +141,80 @@ export default function Reservas() {
   const cargarEscenariosUsuario = async () => { const { data } = await supabase.from('escenarios').select('*').eq('estado', 'ACTIVO'); if (data) setEscenarios(data); setCargandoInicial(false); };
   const cargarMisReservas = async () => { if (!session) return; const { data } = await supabase.from('reservas').select(`id, fecha_reserva, hora_inicio, hora_fin, estado, comprobante_url, escenarios ( nombre )`).eq('usuario_id', session.user.id).order('fecha_reserva', { ascending: false }); if (data) setMisReservas(data); };
   useEffect(() => { if (escenarioSeleccionado && fechaSeleccionada && perfil?.rol !== 'ADMIN') consultarDisponibilidad(escenarioSeleccionado.id, fechaSeleccionada); }, [escenarioSeleccionado, fechaSeleccionada]);
-  const consultarDisponibilidad = async (escenarioId: string, fecha: string) => { setCargandoHoras(true); setBloqueSeleccionado(null); try { const res = await fetch(`http://localhost:3000/api/escenarios/${escenarioId}/disponibilidad?fecha=${fecha}`); if (res.ok) setBloquesLibres((await res.json()).libres); } catch { setBloquesLibres([]); } finally { setCargandoHoras(false); } };
-  const confirmarReserva = async () => { if (!session || !escenarioSeleccionado || !bloqueSeleccionado) return; setProcesandoReserva(true); let comprobante_url = null; let estadoFinal = 'APROBADA'; try { if (perfil?.rol !== 'MEMBER_UPTC') { if (!archivoComprobante) throw new Error("Debes adjuntar el comprobante de pago."); estadoFinal = 'PENDIENTE_APROBACION'; const fileExt = archivoComprobante.name.split('.').pop(); const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`; const { error: uploadError } = await supabase.storage.from('comprobantes').upload(fileName, archivoComprobante); if (uploadError) throw new Error("Error al subir el comprobante."); const { data: { publicUrl } } = supabase.storage.from('comprobantes').getPublicUrl(fileName); comprobante_url = publicUrl; } const nuevaReserva = { escenario_id: escenarioSeleccionado.id, usuario_id: session.user.id, fecha_reserva: fechaSeleccionada, hora_inicio: bloqueSeleccionado.hora_inicio, hora_fin: bloqueSeleccionado.hora_fin, estado: estadoFinal, comprobante_url }; const res = await fetch('http://localhost:3000/api/reservas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nuevaReserva) }); if (!res.ok) throw new Error((await res.json()).error); alert(perfil?.rol === 'MEMBER_UPTC' ? '¡Reserva confirmada exitosamente!' : '¡Reserva enviada! Espera la aprobación del administrador.'); setPaso(1); setEscenarioSeleccionado(null); setFechaSeleccionada(''); setBloqueSeleccionado(null); setArchivoComprobante(null); cargarMisReservas(); setVistaActiva('HISTORIAL'); } catch (error: any) { alert(error.message); } finally { setProcesandoReserva(false); } };
+  
+  const consultarDisponibilidad = async (escenarioId: string, fecha: string) => { 
+    setCargandoHoras(true); 
+    setBloqueSeleccionado(null); 
+    try { 
+      const res = await fetch(`http://localhost:3000/api/escenarios/${escenarioId}/disponibilidad?fecha=${fecha}`); 
+      if (res.ok) setBloquesLibres((await res.json()).libres); 
+    } catch { 
+      setBloquesLibres([]); 
+      toast.error('Error al cargar disponibilidad');
+    } finally { 
+      setCargandoHoras(false); 
+    } 
+  };
+
+  const confirmarReserva = async () => { 
+    if (!session || !escenarioSeleccionado || !bloqueSeleccionado) return; 
+    setProcesandoReserva(true); 
+    let comprobante_url = null; 
+    let estadoFinal = 'APROBADA'; 
+
+    const toastId = toast.loading('Procesando tu reserva...');
+
+    try { 
+      if (perfil?.rol !== 'MEMBER_UPTC') { 
+        if (!archivoComprobante) throw new Error("Debes adjuntar el comprobante de pago."); 
+        estadoFinal = 'PENDIENTE_APROBACION'; 
+        const fileExt = archivoComprobante.name.split('.').pop(); 
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`; 
+        const { error: uploadError } = await supabase.storage.from('comprobantes').upload(fileName, archivoComprobante); 
+        if (uploadError) throw new Error("Error al subir el comprobante."); 
+        const { data: { publicUrl } } = supabase.storage.from('comprobantes').getPublicUrl(fileName); 
+        comprobante_url = publicUrl; 
+      } 
+      
+      const nuevaReserva = { 
+        escenario_id: escenarioSeleccionado.id, 
+        usuario_id: session.user.id, 
+        fecha_reserva: fechaSeleccionada, 
+        hora_inicio: bloqueSeleccionado.hora_inicio, 
+        hora_fin: bloqueSeleccionado.hora_fin, 
+        estado: estadoFinal, 
+        comprobante_url 
+      }; 
+      
+      const res = await fetch('http://localhost:3000/api/reservas', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(nuevaReserva) 
+      }); 
+      
+      if (!res.ok) throw new Error((await res.json()).error); 
+      
+      // Mensajes de éxito diferenciados por rol
+      if (perfil?.rol === 'MEMBER_UPTC') {
+        toast.success('¡Reserva confirmada exitosamente!', { description: 'Tu código QR ya está disponible en tu historial.', id: toastId });
+      } else {
+        toast.success('¡Comprobante enviado!', { description: 'Espera la aprobación del administrador para recibir tu QR.', id: toastId });
+      }
+
+      setPaso(1); 
+      setEscenarioSeleccionado(null); 
+      setFechaSeleccionada(''); 
+      setBloqueSeleccionado(null); 
+      setArchivoComprobante(null); 
+      cargarMisReservas(); 
+      setVistaActiva('HISTORIAL'); 
+
+    } catch (error: any) { 
+      toast.error('Error al procesar reserva', { description: error.message, id: toastId }); 
+    } finally { 
+      setProcesandoReserva(false); 
+    } 
+  };
 
   if (cargandoInicial) return <div className="p-8 text-center text-slate-500 animate-pulse">Cargando...</div>;
 
@@ -139,7 +232,7 @@ export default function Reservas() {
           </div>
         </div>
 
-        {/* BARRA DE HERRAMIENTAS (Sin emojis) */}
+        {/* BARRA DE HERRAMIENTAS */}
         {vistaAdmin === 'TABLA' && (
           <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 animate-in fade-in">
             <div className="md:col-span-2 relative">
@@ -214,7 +307,7 @@ export default function Reservas() {
           </div>
         )}
 
-        {/* LECTOR QR (Sin emojis en mensajes) */}
+        {/* LECTOR QR */}
         {vistaAdmin === 'ESCANER' && (
           <div className="max-w-md mx-auto animate-in slide-in-from-right-4">
             {!resultadoEscaneo ? (
@@ -237,7 +330,7 @@ export default function Reservas() {
   }
 
   // ==========================================
-  // VISTA USUARIO (Se mantiene igual, ya está limpia)
+  // VISTA USUARIO 
   // ==========================================
   return (
     <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-slate-200 min-h-[80vh] flex flex-col">

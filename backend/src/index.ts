@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-// 🔥 ASEGÚRATE DE QUE TENGA EL .js AL FINAL
 import escenariosRoutes from './modules/escenarios/escenarios.routes.js'; 
 import reservasRoutes from './modules/reservas/reservas.routes.js';
 
