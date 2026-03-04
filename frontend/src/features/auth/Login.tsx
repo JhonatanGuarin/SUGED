@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { supabase } from '../../app/supabase';
-import { MapPin, Calendar, ShieldCheck } from 'lucide-react';
+import { MapPin, Calendar, ShieldCheck, Info, X, Code2, Database, LayoutTemplate, Server } from 'lucide-react';
 
 export default function Login() {
-  
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
+
   const iniciarSesionConGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -17,16 +19,14 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans relative">
       
       {/* PANEL DE MARCA (Izquierda en PC, Arriba en Móvil) */}
       <div className="lg:w-5/12 bg-[#1A1A1A] text-white flex flex-col justify-center p-8 md:p-16 relative overflow-hidden">
-        {/* Decoración de fondo sutil */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#FFCC29] opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-white opacity-5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
 
         <div className="relative z-10 max-w-md mx-auto w-full">
-          {/* Logo */}
           <div className="w-16 h-16 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-[#1A1A1A] text-4xl shadow-lg shadow-[#FFCC29]/20 mb-8">
             S
           </div>
@@ -42,7 +42,6 @@ export default function Login() {
             El sistema oficial para la gestión, reserva y control de escenarios deportivos de la universidad.
           </p>
 
-          {/* Características de la plataforma */}
           <div className="space-y-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[#FFCC29] shrink-0">
@@ -79,7 +78,7 @@ export default function Login() {
 
       {/* PANEL DE LOGIN (Derecha en PC, Abajo en Móvil) */}
       <div className="lg:w-7/12 flex-1 flex flex-col items-center justify-center p-8 md:p-16 bg-slate-50 relative">
-        <div className="w-full max-w-md bg-white p-8 md:p-10 rounded-3xl shadow-xl border border-slate-100/60 text-center">
+        <div className="w-full max-w-md bg-white p-8 md:p-10 rounded-3xl shadow-xl border border-slate-100/60 text-center relative z-10">
           
           <h2 className="text-2xl md:text-3xl font-extrabold text-[#1A1A1A] mb-2">
             Bienvenido de vuelta
@@ -106,7 +105,66 @@ export default function Login() {
             </p>
           </div>
         </div>
+
+        {/* BOTÓN ACERCA DE (Debajo de la tarjeta) */}
+        <button 
+          onClick={() => setIsAboutOpen(true)}
+          className="mt-8 flex items-center gap-2 text-sm text-slate-400 hover:text-[#1A1A1A] transition-colors px-4 py-2 rounded-full hover:bg-slate-200 font-medium"
+        >
+          <Info size={16} /> Acerca del Sistema
+        </button>
       </div>
+
+      {/* MODAL: ACERCA DE SUGED */}
+      {isAboutOpen && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            
+            <div className="p-6 border-b border-white/5 flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-xl">S</div>
+                <div>
+                  <h2 className="text-lg font-bold text-white leading-none">SUGED</h2>
+                  <span className="text-xs text-[#FFCC29] font-bold tracking-widest uppercase">Versión 1.0</span>
+                </div>
+              </div>
+              <button onClick={() => setIsAboutOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desarrollo y Arquitectura</h3>
+                <p className="text-white font-medium flex items-center gap-2">
+                  <Code2 size={16} className="text-[#FFCC29]" /> Jhonatan Guarin
+                </p>
+                <p className="text-sm text-slate-400 mt-1 pl-6">Fullstack Developer</p>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Stack Tecnológico</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white/5 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center gap-2 hover:bg-white/10 transition-colors">
+                    <LayoutTemplate size={20} className="text-[#61DAFB]" />
+                    <span className="text-xs text-slate-300 font-medium">React & Tailwind</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center gap-2 hover:bg-white/10 transition-colors">
+                    <Server size={20} className="text-[#339933]" />
+                    <span className="text-xs text-slate-300 font-medium">Node.js & Express</span>
+                  </div>
+                  <div className="col-span-2 bg-white/5 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center gap-2 hover:bg-white/10 transition-colors">
+                    <Database size={20} className="text-[#3ECF8E]" />
+                    <span className="text-xs text-slate-300 font-medium">Supabase (PostgreSQL)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-black/40 text-center border-t border-white/5">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">© 2026 Universidad Pedagógica y Tecnológica de Colombia</p>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

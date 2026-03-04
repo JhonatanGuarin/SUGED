@@ -5,7 +5,8 @@ import {
   asignarHorario, 
   registrarBloqueo,
   editarEscenario,
-  borrarEscenario
+  borrarEscenario,
+  eliminarBloqueo
 } from './escenarios.controller.js';
 
 const router = Router();
@@ -19,5 +20,6 @@ router.post('/:id/horarios', asignarHorario);
 router.post('/:id/bloqueos', registrarBloqueo);
 router.put('/:id', editarEscenario);
 router.delete('/:id', borrarEscenario);
+router.delete('/bloqueos/:id', eliminarBloqueo);
 
 export default router;

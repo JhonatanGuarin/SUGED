@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../../app/supabase';
 import { useAuth } from '../../app/AuthContext';
-import { useLocation } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Upload, Receipt, Ticket, History, QrCode, ScanLine, AlertCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Upload, Receipt, Ticket, History, ScanLine, AlertCircle, Search, Filter } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
@@ -23,14 +23,14 @@ export default function Reservas() {
   const [vistaAdmin, setVistaAdmin] = useState<'TABLA' | 'ESCANER'>('TABLA');
   const [resultadoEscaneo, setResultadoEscaneo] = useState<{ valido: boolean; mensaje: string; datos?: ReservaAdmin } | null>(null);
 
+  // Estados Filtros Admin
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('TODOS');
+  const [filtroFecha, setFiltroFecha] = useState('');
+
   // Estados Usuario
   const [vistaActiva, setVistaActiva] = useState<'NUEVA' | 'HISTORIAL'>('NUEVA');
   const [misReservas, setMisReservas] = useState<any[]>([]);
-  useEffect(() => {
-    if (location.state && location.state.pestaña) {
-      setVistaActiva(location.state.pestaña);
-    }
-  }, [location]);
 
   // Estados Wizard Usuario
   const [escenarios, setEscenarios] = useState<Escenario[]>([]);
@@ -44,9 +44,10 @@ export default function Reservas() {
   const [procesandoReserva, setProcesandoReserva] = useState(false);
 
   useEffect(() => {
+    if (location.state && location.state.pestaña) { setVistaActiva(location.state.pestaña); }
     if (perfil?.rol === 'ADMIN') cargarReservasAdmin();
     else { cargarEscenariosUsuario(); cargarMisReservas(); }
-  }, [perfil]);
+  }, [perfil, location]);
 
   // --- LÓGICA ADMIN ---
   const cargarReservasAdmin = async () => {
@@ -59,10 +60,18 @@ export default function Reservas() {
     setCargandoInicial(false);
   };
 
-  const manejarCambioEstado = async (id: string, nuevoEstado: string) => {
-    if (!window.confirm(`¿Seguro que deseas marcar esta reserva como ${nuevoEstado}?`)) return;
+  const manejarCambioEstado = async (reserva: any, nuevoEstado: string) => {
+    let mensajeConfirmacion = `¿Seguro que deseas marcar esta reserva como ${nuevoEstado}?`;
+    
+    // Alerta profesional sin emojis
+    if (nuevoEstado === 'CANCELADA' && reserva.usuarios?.rol !== 'MEMBER_UPTC') {
+      mensajeConfirmacion = `¡ADVERTENCIA DE SEGURIDAD!\n\nEstás a punto de CANCELAR una reserva PAGADA por un usuario externo.\n\nEl sistema revocará su acceso. ¿Ya te comunicaste con esta persona para coordinar la devolución o reprogramación?\n\nSi estás seguro de proceder, presiona Aceptar.`;
+    }
+
+    if (!window.confirm(mensajeConfirmacion)) return;
+
     try {
-      const res = await fetch(`http://localhost:3000/api/reservas/${id}/estado`, {
+      const res = await fetch(`http://localhost:3000/api/reservas/${reserva.id}/estado`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: nuevoEstado })
       });
       if (!res.ok) throw new Error((await res.json()).error);
@@ -73,7 +82,6 @@ export default function Reservas() {
 
   const procesarQR = async (textoLector: string) => {
     try {
-      // Buscamos el ID en Supabase en tiempo real
       const { data, error } = await supabase
         .from('reservas')
         .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol )`)
@@ -81,22 +89,34 @@ export default function Reservas() {
         .single();
 
       if (error || !data) {
-        setResultadoEscaneo({ valido: false, mensaje: 'Código QR no válido o reserva no encontrada en el sistema.' });
+        setResultadoEscaneo({ valido: false, mensaje: 'Código QR no válido o reserva no encontrada.' });
         return;
       }
 
       if (data.estado !== 'APROBADA') {
-        setResultadoEscaneo({ valido: false, mensaje: `Reserva Denegada. Estado actual: ${data.estado.replace('_', ' ')}` });
+        setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. Estado: ${data.estado.replace('_', ' ')}` });
         return;
       }
 
-      setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Permitido!', datos: data as any });
+      setResultadoEscaneo({ valido: true, mensaje: 'Acceso Permitido', datos: data as any });
     } catch (err) {
-      setResultadoEscaneo({ valido: false, mensaje: 'Error al leer el código.' });
+      setResultadoEscaneo({ valido: false, mensaje: 'Error de lectura.' });
     }
   };
 
-  // --- LÓGICA USUARIO (Omitida para no saturar el código aquí, es la misma que ya teníamos) ---
+  // --- LÓGICA DE FILTRADO ---
+  const reservasFiltradas = reservasAdmin.filter((res) => {
+    const coincideNombre = res.usuarios?.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) || false;
+    const coincideEscenario = res.escenarios?.nombre.toLowerCase().includes(busqueda.toLowerCase()) || false;
+    const coincideTexto = coincideNombre || coincideEscenario;
+
+    const coincideEstado = filtroEstado === 'TODOS' || res.estado === filtroEstado;
+    const coincideFecha = filtroFecha === '' || res.fecha_reserva === filtroFecha;
+
+    return coincideTexto && coincideEstado && coincideFecha;
+  });
+
+  // --- LÓGICA USUARIO ---
   const cargarEscenariosUsuario = async () => { const { data } = await supabase.from('escenarios').select('*').eq('estado', 'ACTIVO'); if (data) setEscenarios(data); setCargandoInicial(false); };
   const cargarMisReservas = async () => { if (!session) return; const { data } = await supabase.from('reservas').select(`id, fecha_reserva, hora_inicio, hora_fin, estado, comprobante_url, escenarios ( nombre )`).eq('usuario_id', session.user.id).order('fecha_reserva', { ascending: false }); if (data) setMisReservas(data); };
   useEffect(() => { if (escenarioSeleccionado && fechaSeleccionada && perfil?.rol !== 'ADMIN') consultarDisponibilidad(escenarioSeleccionado.id, fechaSeleccionada); }, [escenarioSeleccionado, fechaSeleccionada]);
@@ -112,23 +132,37 @@ export default function Reservas() {
     return (
       <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-slate-200 min-h-[80vh]">
         <div className="mb-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-[#1A1A1A]">Centro de Control</h1>
-            <p className="text-slate-500 mt-1 text-sm">Gestiona reservas y valida entradas.</p>
-          </div>
-          
-          {/* Pestañas de Admin */}
+          <div><h1 className="text-2xl font-bold text-[#1A1A1A]">Centro de Control</h1><p className="text-slate-500 mt-1 text-sm">Gestiona reservas y valida entradas.</p></div>
           <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
-            <button onClick={() => setVistaAdmin('TABLA')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${vistaAdmin === 'TABLA' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}>
-              <History size={16} /> Reservas
-            </button>
-            <button onClick={() => { setVistaAdmin('ESCANER'); setResultadoEscaneo(null); }} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${vistaAdmin === 'ESCANER' ? 'bg-[#FFCC29] text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}>
-              <ScanLine size={16} /> Escanear Entrada
-            </button>
+            <button onClick={() => setVistaAdmin('TABLA')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${vistaAdmin === 'TABLA' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><History size={16} /> Reservas</button>
+            <button onClick={() => { setVistaAdmin('ESCANER'); setResultadoEscaneo(null); }} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${vistaAdmin === 'ESCANER' ? 'bg-[#FFCC29] text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><ScanLine size={16} /> Escanear Entrada</button>
           </div>
         </div>
 
-        {/* CONTENIDO ADMIN: TABLA */}
+        {/* BARRA DE HERRAMIENTAS (Sin emojis) */}
+        {vistaAdmin === 'TABLA' && (
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 animate-in fade-in">
+            <div className="md:col-span-2 relative">
+              <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+              <input type="text" placeholder="Buscar por estudiante o escenario..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 outline-none focus:border-[#FFCC29] bg-white" />
+            </div>
+            
+            <div className="relative">
+              <Filter className="absolute left-3 top-3 text-slate-400" size={18} />
+              <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 outline-none focus:border-[#FFCC29] bg-white appearance-none cursor-pointer">
+                <option value="TODOS">Todos los estados</option>
+                <option value="PENDIENTE_APROBACION">Pendientes de Pago</option>
+                <option value="APROBADA">Aprobadas</option>
+                <option value="RECHAZADA">Rechazadas</option>
+                <option value="CANCELADA">Canceladas</option>
+              </select>
+            </div>
+
+            <div><input type="date" value={filtroFecha} onChange={(e) => setFiltroFecha(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300 outline-none focus:border-[#FFCC29] bg-white" /></div>
+          </div>
+        )}
+
+        {/* TABLA ADMIN */}
         {vistaAdmin === 'TABLA' && (
           <div className="overflow-x-auto animate-in fade-in">
             <table className="w-full text-left border-collapse">
@@ -143,11 +177,19 @@ export default function Reservas() {
                 </tr>
               </thead>
               <tbody>
-                {reservasAdmin.length === 0 ? (
-                  <tr><td colSpan={6} className="p-8 text-center text-slate-500">No hay reservas registradas.</td></tr>
+                {reservasFiltradas.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-slate-500">
+                      <div className="flex flex-col items-center gap-2">
+                        <Search size={32} className="text-slate-300" />
+                        <p>No se encontraron reservas con esos filtros.</p>
+                        <button onClick={() => { setBusqueda(''); setFiltroEstado('TODOS'); setFiltroFecha(''); }} className="text-[#FFCC29] font-bold text-sm hover:underline">Limpiar filtros</button>
+                      </div>
+                    </td>
+                  </tr>
                 ) : (
-                  reservasAdmin.map((res) => (
-                    <tr key={res.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  reservasFiltradas.map((res) => (
+                    <tr key={res.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                       <td className="p-4"><div className="font-bold text-[#1A1A1A]">{res.usuarios?.nombre_completo || 'Usuario Desconocido'}</div><div className="text-xs text-slate-500">{res.usuarios?.rol}</div></td>
                       <td className="p-4 font-bold text-[#1A1A1A]">{res.escenarios?.nombre}</td>
                       <td className="p-4"><div className="text-sm font-bold">{res.fecha_reserva}</div><div className="text-xs text-slate-500">{res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</div></td>
@@ -156,9 +198,12 @@ export default function Reservas() {
                       <td className="p-4 text-right flex justify-end gap-2">
                         {res.estado === 'PENDIENTE_APROBACION' && (
                           <>
-                            <button onClick={() => manejarCambioEstado(res.id, 'APROBADA')} className="p-2 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-lg transition-colors" title="Aprobar"><Check size={18} /></button>
-                            <button onClick={() => manejarCambioEstado(res.id, 'RECHAZADA')} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition-colors" title="Rechazar"><X size={18} /></button>
+                            <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="p-2 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-lg transition-colors" title="Aprobar"><Check size={18} /></button>
+                            <button onClick={() => manejarCambioEstado(res, 'RECHAZADA')} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition-colors" title="Rechazar"><X size={18} /></button>
                           </>
+                        )}
+                        {res.estado === 'APROBADA' && (
+                          <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2 bg-slate-100 text-slate-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors" title="Cancelar Reserva"><X size={18} /></button>
                         )}
                       </td>
                     </tr>
@@ -169,47 +214,20 @@ export default function Reservas() {
           </div>
         )}
 
-        {/* CONTENIDO ADMIN: LECTOR QR */}
+        {/* LECTOR QR (Sin emojis en mensajes) */}
         {vistaAdmin === 'ESCANER' && (
           <div className="max-w-md mx-auto animate-in slide-in-from-right-4">
-            
             {!resultadoEscaneo ? (
               <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl p-4 overflow-hidden text-center">
                 <p className="font-bold text-[#1A1A1A] mb-4">Apunta la cámara al código QR</p>
-                <div className="rounded-xl overflow-hidden shadow-inner">
-                  <Scanner 
-                    onScan={(result) => procesarQR(result[0].rawValue)}
-                    onError={(error) => console.log(error)}
-                  />
-                </div>
+                <div className="rounded-xl overflow-hidden shadow-inner"><Scanner onScan={(result) => procesarQR(result[0].rawValue)} onError={(error) => console.log(error)} /></div>
               </div>
             ) : (
               <div className={`p-6 rounded-2xl text-center border-2 ${resultadoEscaneo.valido ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
                 {resultadoEscaneo.valido ? <CheckCircle2 size={64} className="mx-auto text-green-500 mb-4" /> : <AlertCircle size={64} className="mx-auto text-red-500 mb-4" />}
-                
-                <h2 className={`text-2xl font-black mb-2 ${resultadoEscaneo.valido ? 'text-green-700' : 'text-red-700'}`}>
-                  {resultadoEscaneo.mensaje}
-                </h2>
-                
-                {resultadoEscaneo.datos && (
-                  <div className="text-left bg-white p-4 rounded-xl mt-4 border border-green-100 shadow-sm">
-                    <p className="text-sm text-slate-500 mb-1">Usuario:</p>
-                    <p className="font-bold text-[#1A1A1A] text-lg mb-3">{resultadoEscaneo.datos.usuarios?.nombre_completo}</p>
-                    
-                    <p className="text-sm text-slate-500 mb-1">Escenario:</p>
-                    <p className="font-bold text-[#1A1A1A] mb-3">{resultadoEscaneo.datos.escenarios?.nombre}</p>
-                    
-                    <p className="text-sm text-slate-500 mb-1">Horario Reservado:</p>
-                    <p className="font-bold text-[#1A1A1A]">{resultadoEscaneo.datos.fecha_reserva} | {resultadoEscaneo.datos.hora_inicio.slice(0,5)} - {resultadoEscaneo.datos.hora_fin.slice(0,5)}</p>
-                  </div>
-                )}
-
-                <button 
-                  onClick={() => setResultadoEscaneo(null)}
-                  className="mt-6 w-full bg-[#1A1A1A] text-white py-3 rounded-xl font-bold hover:bg-black transition-colors"
-                >
-                  Escanear otro código
-                </button>
+                <h2 className={`text-2xl font-black mb-2 ${resultadoEscaneo.valido ? 'text-green-700' : 'text-red-700'}`}>{resultadoEscaneo.mensaje}</h2>
+                {resultadoEscaneo.datos && (<div className="text-left bg-white p-4 rounded-xl mt-4 border border-green-100 shadow-sm"><p className="text-sm text-slate-500 mb-1">Usuario:</p><p className="font-bold text-[#1A1A1A] text-lg mb-3">{resultadoEscaneo.datos.usuarios?.nombre_completo}</p><p className="text-sm text-slate-500 mb-1">Escenario:</p><p className="font-bold text-[#1A1A1A] mb-3">{resultadoEscaneo.datos.escenarios?.nombre}</p><p className="text-sm text-slate-500 mb-1">Horario Reservado:</p><p className="font-bold text-[#1A1A1A]">{resultadoEscaneo.datos.fecha_reserva} | {resultadoEscaneo.datos.hora_inicio.slice(0,5)} - {resultadoEscaneo.datos.hora_fin.slice(0,5)}</p></div>)}
+                <button onClick={() => setResultadoEscaneo(null)} className="mt-6 w-full bg-[#1A1A1A] text-white py-3 rounded-xl font-bold hover:bg-black transition-colors">Escanear otro código</button>
               </div>
             )}
           </div>
@@ -219,9 +237,8 @@ export default function Reservas() {
   }
 
   // ==========================================
-  // VISTA USUARIO (MEMBER_UPTC o EXTERNO)
+  // VISTA USUARIO (Se mantiene igual, ya está limpia)
   // ==========================================
-  // (Mantenemos exactamente la misma vista de usuario con el QR que teníamos en el paso anterior)
   return (
     <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-slate-200 min-h-[80vh] flex flex-col">
       <div className="mb-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-4">

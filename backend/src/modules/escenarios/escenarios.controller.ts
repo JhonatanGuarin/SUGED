@@ -5,7 +5,8 @@ import {
   crearHorario, 
   crearBloqueo,
   actualizarEscenarioBase,
-  eliminarEscenarioBase
+  eliminarEscenarioBase,
+  eliminarBloqueoBase
 } from './escenarios.service.js';
 
 export const getDisponibilidad = async (req: Request, res: Response): Promise<any> => {
@@ -75,6 +76,18 @@ export const borrarEscenario = async (req: Request, res: Response): Promise<any>
     const escenarioId = req.params.id as string;
     await eliminarEscenarioBase(escenarioId);
     return res.status(200).json({ mensaje: 'Escenario eliminado' });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+export const eliminarBloqueo = async (req: Request, res: Response): Promise<any> => {
+  try {
+    
+    const bloqueoId = req.params.id as string; 
+    
+    await eliminarBloqueoBase(bloqueoId);
+    return res.status(200).json({ message: 'Bloqueo eliminado correctamente' });
   } catch (error: any) {
     return res.status(400).json({ error: error.message });
   }
