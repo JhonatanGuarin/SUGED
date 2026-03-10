@@ -7,6 +7,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+// NUEVO: Importamos nuestra herramienta centralizada para peticiones
+import { fetchAPI } from '../../utils/api';
 
 interface Escenario { id: string; nombre: string; tarifa_hora: number; imagen_url: string; }
 interface BloqueDisponible { hora_inicio: string; hora_fin: string; etiqueta: string; }
@@ -65,7 +67,6 @@ export default function Reservas() {
   const manejarCambioEstado = async (reserva: any, nuevoEstado: string) => {
     const esCritico = nuevoEstado === 'CANCELADA' && reserva.usuarios?.rol !== 'MEMBER_UPTC';
     
-    // CONFIGURACIÓN DINÁMICA DEL MODAL
     const confirmacion = await Swal.fire({
       title: esCritico ? '¡ADVERTENCIA CRÍTICA!' : 'Confirmar Acción',
       html: esCritico 
@@ -73,11 +74,12 @@ export default function Reservas() {
         : `¿Seguro que deseas marcar esta reserva como <b>${nuevoEstado.replace('_', ' ')}</b>?`,
       icon: esCritico ? 'error' : 'warning',
       showCancelButton: true,
-      confirmButtonColor: esCritico ? '#ef4444' : '#FFCC29', // Rojo si es crítico, Amarillo si es normal
+      confirmButtonColor: esCritico ? '#ef4444' : '#FFCC29',
       cancelButtonColor: '#64748b',
       confirmButtonText: esCritico ? 'Sí, cancelar reserva' : 'Sí, confirmar',
       cancelButtonText: 'Atrás',
-      color: '#1A1A1A'
+      color: '#1A1A1A',
+      customClass: { popup: 'rounded-2xl' }
     });
 
     if (!confirmacion.isConfirmed) return;
@@ -85,8 +87,11 @@ export default function Reservas() {
     const toastId = toast.loading('Actualizando estado...');
 
     try {
-      const res = await fetch(`http://localhost:3000/api/reservas/${reserva.id}/estado`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: nuevoEstado })
+      // USAMOS FETCHAPI: Simplifica la URL y asegura que el JWT se envíe
+      const res = await fetchAPI(`/api/reservas/${reserva.id}/estado`, {
+        method: 'PATCH', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ estado: nuevoEstado })
       });
       if (!res.ok) throw new Error((await res.json()).error);
       
@@ -116,7 +121,6 @@ export default function Reservas() {
       }
 
       setResultadoEscaneo({ valido: true, mensaje: 'Acceso Permitido', datos: data as any });
-      // Notificación extra para el administrador escaneando
       toast.success('Pase validado correctamente');
 
     } catch (err) {
@@ -146,7 +150,8 @@ export default function Reservas() {
     setCargandoHoras(true); 
     setBloqueSeleccionado(null); 
     try { 
-      const res = await fetch(`http://localhost:3000/api/escenarios/${escenarioId}/disponibilidad?fecha=${fecha}`); 
+      // USAMOS FETCHAPI: Consulta pública pero segura si luego decides protegerla
+      const res = await fetchAPI(`/api/escenarios/${escenarioId}/disponibilidad?fecha=${fecha}`); 
       if (res.ok) setBloquesLibres((await res.json()).libres); 
     } catch { 
       setBloquesLibres([]); 
@@ -186,7 +191,8 @@ export default function Reservas() {
         comprobante_url 
       }; 
       
-      const res = await fetch('http://localhost:3000/api/reservas', { 
+      // USAMOS FETCHAPI: Inyectará el token para que el backend reconozca al usuario
+      const res = await fetchAPI('/api/reservas', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(nuevaReserva) 
@@ -194,7 +200,6 @@ export default function Reservas() {
       
       if (!res.ok) throw new Error((await res.json()).error); 
       
-      // Mensajes de éxito diferenciados por rol
       if (perfil?.rol === 'MEMBER_UPTC') {
         toast.success('¡Reserva confirmada exitosamente!', { description: 'Tu código QR ya está disponible en tu historial.', id: toastId });
       } else {

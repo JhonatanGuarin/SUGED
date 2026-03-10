@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { verificarToken, requerirAdmin } from '../../middlewares/auth.middleware.js';
 import { 
   getDisponibilidad, 
   crearNuevoEscenario, 
@@ -15,11 +16,11 @@ const router = Router();
 router.get('/:id/disponibilidad', getDisponibilidad);
 
 // Rutas administrativas
-router.post('/', crearNuevoEscenario);
+router.post('/',verificarToken, requerirAdmin, crearNuevoEscenario);
 router.post('/:id/horarios', asignarHorario);
 router.post('/:id/bloqueos', registrarBloqueo);
 router.put('/:id', editarEscenario);
-router.delete('/:id', borrarEscenario);
+router.delete('/:id', verificarToken, requerirAdmin, borrarEscenario);
 router.delete('/bloqueos/:id', eliminarBloqueo);
 
 export default router;

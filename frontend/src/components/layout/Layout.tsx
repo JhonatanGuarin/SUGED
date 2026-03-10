@@ -26,7 +26,7 @@ export default function Layout() {
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
       
       {/* HEADER MÓVIL (Solo visible en celulares) */}
-      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 sticky top-0 z-50 shadow-md">
+      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 sticky top-0 z-30 shadow-md">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-[#FFCC29] rounded-md flex items-center justify-center font-black text-[#1A1A1A]">
             S
@@ -34,19 +34,29 @@ export default function Layout() {
           <span className="font-black text-lg tracking-wider text-white">SUGED</span>
         </div>
         <button 
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+          onClick={() => setIsMobileMenuOpen(true)} 
           className="text-[#FFCC29] hover:text-white transition-colors p-1"
         >
-          {isMobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
+          <Menu size={28} />
         </button>
       </div>
 
       {/* SIDEBAR (Menú lateral) */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-40 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        fixed md:static inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        {/* Logo Institucional (Escritorio) */}
+        {/* Cabecera del Sidebar para móviles (Botón Cerrar) */}
+        <div className="md:hidden flex justify-end p-4 border-b border-slate-800/80">
+          <button 
+            onClick={() => setIsMobileMenuOpen(false)} 
+            className="text-slate-400 hover:text-white transition-colors p-1"
+          >
+            <X size={28} />
+          </button>
+        </div>
+
+        {/* Logo Institucional (Solo Escritorio) */}
         <div className="hidden md:flex items-center gap-4 p-6 border-b border-slate-800/80">
            <div className="w-12 h-12 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-2xl shadow-lg shadow-[#FFCC29]/20">
             S
@@ -60,10 +70,10 @@ export default function Layout() {
         {/* Perfil del Usuario (Clickeable hacia el Dashboard) */}
         <button 
           onClick={() => {
-            navigate('/'); // Asegúrate de que '/' sea la ruta de tu Inicio. Si es '/dashboard', cámbialo aquí.
-            setIsMobileMenuOpen(false); // Para que se cierre el menú en celulares al hacer clic
+            navigate('/'); 
+            setIsMobileMenuOpen(false); 
           }}
-          className="w-full text-left p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20 hover:bg-black/40 transition-colors cursor-pointer group"
+          className="w-full text-left p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20 hover:bg-black/40 transition-colors cursor-pointer group shrink-0"
         >
           <div className="w-12 h-12 rounded-full bg-slate-800 border-2 border-[#FFCC29] group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0 shadow-sm">
             {session?.user?.user_metadata?.avatar_url ? (
@@ -98,7 +108,6 @@ export default function Layout() {
                 }
               `}
             >
-              {/* Aquí envolvemos el contenido en una función para tener acceso a isActive */}
               {({ isActive }) => (
                 <>
                   <span className={`${isActive ? 'text-[#1A1A1A]' : 'text-slate-500 group-hover:text-[#FFCC29] transition-colors'}`}>
@@ -112,7 +121,7 @@ export default function Layout() {
         </nav>
 
         {/* Botón de Cerrar Sesión */}
-        <div className="p-4 border-t border-slate-800/80">
+        <div className="p-4 border-t border-slate-800/80 shrink-0">
           <button 
             onClick={manejarCerrarSesion}
             className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors"
@@ -126,7 +135,7 @@ export default function Layout() {
       {/* Fondo oscuro cuando el menú móvil está abierto */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}

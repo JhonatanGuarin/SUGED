@@ -4,6 +4,8 @@ import { useAuth } from '../../app/AuthContext';
 import { MapPin, Users, DollarSign, X, Plus, Clock, Edit, Trash2, CalendarOff } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+// NUEVO: Importamos nuestra herramienta para peticiones seguras
+import { fetchAPI } from '../../utils/api';
 
 interface Escenario { id: string; nombre: string; descripcion: string; aforo: number; tarifa_hora: number; imagen_url: string; estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO'; }
 interface Bloqueo { id: string; fecha: string; hora_inicio: string; hora_fin: string; motivo: string; }
@@ -63,10 +65,16 @@ export default function Escenarios() {
         tarifa_hora: parseInt(formData.get('tarifa_hora') as string) || 0, estado: formData.get('estado'), imagen_url: imagen_url_final
       };
 
-      const url = escenarioEditando ? `http://localhost:3000/api/escenarios/${escenarioEditando.id}` : 'http://localhost:3000/api/escenarios';
+      const endpoint = escenarioEditando ? `/api/escenarios/${escenarioEditando.id}` : '/api/escenarios';
       const method = escenarioEditando ? 'PUT' : 'POST';
 
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosEscenario) });
+      // USAMOS FETCHAPI
+      const res = await fetchAPI(endpoint, { 
+        method, 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(datosEscenario) 
+      });
+      
       if (!res.ok) throw new Error((await res.json()).error);
       
       setIsModalOpen(false); 
@@ -81,7 +89,6 @@ export default function Escenarios() {
   };
 
   const manejarEliminar = async (id: string) => {
-    // NUEVO MODAL SWEETALERT
     const confirmacion = await Swal.fire({
       title: '¿Estás seguro?',
       text: "Esta acción eliminará el escenario y todas sus dependencias. No se puede deshacer.",
@@ -91,16 +98,14 @@ export default function Escenarios() {
       cancelButtonColor: '#64748b',  
       confirmButtonText: 'Sí, eliminar',
       cancelButtonText: 'Cancelar',
-      // 👇 Aquí está el cambio correcto, borramos borderRadius
-      customClass: {
-        popup: 'rounded-2xl'
-      }
+      customClass: { popup: 'rounded-2xl' }
     });
 
     if (!confirmacion.isConfirmed) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/api/escenarios/${id}`, { method: 'DELETE' });
+      // USAMOS FETCHAPI
+      const res = await fetchAPI(`/api/escenarios/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error);
       obtenerEscenarios();
       toast.success('Escenario eliminado correctamente');
@@ -117,7 +122,12 @@ export default function Escenarios() {
     const datos = { dia_semana: parseInt(formData.get('dia_semana') as string), hora_apertura: `${formData.get('hora_apertura')}:00`, hora_cierre: `${formData.get('hora_cierre')}:00` };
     setProcesando(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/escenarios/${escenarioSeleccionado.id}/horarios`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+      // USAMOS FETCHAPI
+      const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/horarios`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(datos) 
+      });
       if (!res.ok) throw new Error((await res.json()).error);
       toast.success('Horario asignado correctamente');
       setIsHorarioModalOpen(false);
@@ -164,7 +174,12 @@ export default function Escenarios() {
 
     setProcesando(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/escenarios/${escenarioSeleccionado.id}/bloqueos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+      // USAMOS FETCHAPI
+      const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/bloqueos`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(datos) 
+      });
       if (!res.ok) throw new Error((await res.json()).error);
       
       (e.target as HTMLFormElement).reset();
@@ -179,22 +194,23 @@ export default function Escenarios() {
   };
 
   const eliminarBloqueo = async (bloqueoId: string) => {
-    // NUEVO MODAL SWEETALERT
     const confirmacion = await Swal.fire({
       title: '¿Quitar bloqueo?',
       text: "El escenario volverá a estar disponible para reservas en esa fecha.",
       icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#1A1A1A', // Negro SUGED
+      confirmButtonColor: '#1A1A1A',
       cancelButtonColor: '#64748b',
       confirmButtonText: 'Sí, liberar fecha',
-      cancelButtonText: 'Cancelar'
+      cancelButtonText: 'Cancelar',
+      customClass: { popup: 'rounded-2xl' }
     });
 
     if (!confirmacion.isConfirmed) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/api/escenarios/bloqueos/${bloqueoId}`, { method: 'DELETE' });
+      // USAMOS FETCHAPI
+      const res = await fetchAPI(`/api/escenarios/bloqueos/${bloqueoId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Error al eliminar");
       cargarBloqueos(escenarioSeleccionado!.id); 
       toast.success('Bloqueo eliminado correctamente');
@@ -238,17 +254,68 @@ export default function Escenarios() {
       )}
 
       {/* MODAL CREAR/EDITAR */}
-      {isModalOpen && (<div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-end sm:items-center z-50 sm:p-4"><div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"><div className="flex justify-between items-center p-5 md:p-6 border-b border-slate-100 bg-slate-50"><h2 className="text-lg md:text-xl font-bold text-[#1A1A1A]">{escenarioEditando ? 'Editar Escenario' : 'Registrar Escenario'}</h2><button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-[#1A1A1A] transition-colors"><X size={24} /></button></div><form onSubmit={manejarGuardarEscenario} className="p-5 md:p-6 overflow-y-auto space-y-4"><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Nombre *</label><input required name="nombre" defaultValue={escenarioEditando?.nombre} type="text" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Descripción</label><textarea name="descripcion" defaultValue={escenarioEditando?.descripcion} rows={3} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] resize-none" /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Aforo *</label><input required name="aforo" defaultValue={escenarioEditando?.aforo || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Tarifa/Hora *</label><input required name="tarifa_hora" defaultValue={escenarioEditando?.tarifa_hora || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Estado</label><select name="estado" defaultValue={escenarioEditando?.estado || 'ACTIVO'} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white"><option value="ACTIVO">Activo</option><option value="MANTENIMIENTO">Mantenimiento</option><option value="INACTIVO">Inactivo</option></select></div><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Foto del Escenario</label><input name="imagen_archivo" type="file" accept="image/*" className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-[#FFCC29] bg-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-[#FFCC29]/20 file:text-[#1A1A1A] hover:file:bg-[#FFCC29]/30 transition-all cursor-pointer" /></div></div><div className="pt-4 flex justify-end gap-3 border-t border-slate-100 mt-6"><button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-lg">Cancelar</button><button type="submit" disabled={guardando} className="bg-[#FFCC29] text-[#1A1A1A] px-5 py-2.5 rounded-lg font-bold hover:bg-[#e6b825]">{guardando ? 'Guardando...' : 'Guardar'}</button></div></form></div></div>)}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Cabecera fija */}
+            <div className="flex justify-between items-center p-4 md:p-5 border-b border-slate-100 bg-slate-50 shrink-0">
+              <h2 className="text-lg md:text-xl font-bold text-[#1A1A1A]">{escenarioEditando ? 'Editar Escenario' : 'Registrar Escenario'}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-[#1A1A1A] transition-colors"><X size={24} /></button>
+            </div>
+            
+            {/* Cuerpo Scrolleable */}
+            <form onSubmit={manejarGuardarEscenario} className="p-4 md:p-6 overflow-y-auto space-y-4 flex-1">
+              <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Nombre *</label><input required name="nombre" defaultValue={escenarioEditando?.nombre} type="text" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
+              <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Descripción</label><textarea name="descripcion" defaultValue={escenarioEditando?.descripcion} rows={3} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] resize-none" /></div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Aforo *</label><input required name="aforo" defaultValue={escenarioEditando?.aforo || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Tarifa/Hora *</label><input required name="tarifa_hora" defaultValue={escenarioEditando?.tarifa_hora || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Estado</label><select name="estado" defaultValue={escenarioEditando?.estado || 'ACTIVO'} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white"><option value="ACTIVO">Activo</option><option value="MANTENIMIENTO">Mantenimiento</option><option value="INACTIVO">Inactivo</option></select></div>
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Foto del Escenario</label><input name="imagen_archivo" type="file" accept="image/*" className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-[#FFCC29] bg-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-[#FFCC29]/20 file:text-[#1A1A1A] hover:file:bg-[#FFCC29]/30 transition-all cursor-pointer" /></div>
+              </div>
+              
+              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 mt-6">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-lg">Cancelar</button>
+                <button type="submit" disabled={guardando} className="bg-[#FFCC29] text-[#1A1A1A] px-5 py-2.5 rounded-lg font-bold hover:bg-[#e6b825]">{guardando ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL HORARIOS */}
-      {isHorarioModalOpen && escenarioSeleccionado && (<div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-end sm:items-center z-50 sm:p-4"><div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95"><div className="flex justify-between items-center p-5 border-b border-slate-100 bg-[#FFCC29]"><h2 className="text-lg font-bold text-[#1A1A1A] flex items-center gap-2"><Clock size={20}/> Horario Rutina</h2><button onClick={() => setIsHorarioModalOpen(false)} className="text-[#1A1A1A]/70 hover:text-[#1A1A1A]"><X size={24} /></button></div><form onSubmit={manejarGuardarHorario} className="p-5 space-y-4"><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Día *</label><select name="dia_semana" required className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white"><option value="">Seleccione...</option><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="7">Domingo</option></select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Apertura *</label><input required name="hora_apertura" type="time" defaultValue="08:00" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div><div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Cierre *</label><input required name="hora_cierre" type="time" defaultValue="18:00" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div></div><div className="flex justify-end gap-3 mt-4"><button type="submit" disabled={procesando} className="w-full bg-[#1A1A1A] text-white px-5 py-2.5 rounded-lg font-bold hover:bg-black">{procesando ? 'Procesando...' : 'Asignar'}</button></div></form></div></div>)}
+      {isHorarioModalOpen && escenarioSeleccionado && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
+            <div className="flex justify-between items-center p-4 md:p-5 border-b border-slate-100 bg-[#FFCC29] shrink-0">
+              <h2 className="text-lg font-bold text-[#1A1A1A] flex items-center gap-2"><Clock size={20}/> Horario Rutina</h2>
+              <button onClick={() => setIsHorarioModalOpen(false)} className="text-[#1A1A1A]/70 hover:text-[#1A1A1A]"><X size={24} /></button>
+            </div>
+            
+            <form onSubmit={manejarGuardarHorario} className="p-4 md:p-5 space-y-4 overflow-y-auto flex-1">
+              <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Día *</label><select name="dia_semana" required className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white"><option value="">Seleccione...</option><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="7">Domingo</option></select></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Apertura *</label><input required name="hora_apertura" type="time" defaultValue="08:00" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
+                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Cierre *</label><input required name="hora_cierre" type="time" defaultValue="18:00" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
+              </div>
+              <div className="flex justify-end pt-2">
+                <button type="submit" disabled={procesando} className="w-full bg-[#1A1A1A] text-white px-5 py-2.5 rounded-lg font-bold hover:bg-black">{procesando ? 'Procesando...' : 'Asignar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL BLOQUEOS */}
       {isBloqueoModalOpen && escenarioSeleccionado && (
-        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-end sm:items-center z-50 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95">
+        <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
             
-            <div className="flex justify-between items-center p-5 border-b border-red-500 bg-red-50">
+            <div className="flex justify-between items-center p-4 md:p-5 border-b border-red-500 bg-red-50 shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-red-700 flex items-center gap-2"><CalendarOff size={20}/> Gestión de Bloqueos</h2>
                 <p className="text-xs text-red-600 mt-1">{escenarioSeleccionado.nombre}</p>
@@ -256,21 +323,13 @@ export default function Escenarios() {
               <button onClick={() => setIsBloqueoModalOpen(false)} className="text-red-400 hover:text-red-700"><X size={24} /></button>
             </div>
 
-            <div className="flex flex-col overflow-y-auto">
-              <form onSubmit={manejarGuardarBloqueo} className="p-5 border-b border-slate-200 bg-white">
+            <div className="flex flex-col overflow-y-auto flex-1">
+              <form onSubmit={manejarGuardarBloqueo} className="p-4 md:p-5 border-b border-slate-200 bg-white">
                 <h3 className="text-sm font-bold text-[#1A1A1A] mb-4 uppercase tracking-wider text-slate-500">Nuevo Bloqueo</h3>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Fecha Exacta *</label>
-                    <input 
-                      required 
-                      name="fecha" 
-                      type="date" 
-                      min={new Date().toISOString().split('T')[0]} 
-                      value={fechaFiltro}
-                      onChange={(e) => setFechaFiltro(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" 
-                    />
+                    <input required name="fecha" type="date" min={new Date().toISOString().split('T')[0]} value={fechaFiltro} onChange={(e) => setFechaFiltro(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" />
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -299,7 +358,7 @@ export default function Escenarios() {
               </form>
 
               {/* LISTA FILTRADA */}
-              <div className="p-5 bg-slate-50 flex-1">
+              <div className="p-4 md:p-5 bg-slate-50 flex-1">
                 <h3 className="text-sm font-bold text-[#1A1A1A] mb-4 uppercase tracking-wider text-slate-500">
                   Bloqueos para el {fechaFiltro || 'día seleccionado'}
                 </h3>
