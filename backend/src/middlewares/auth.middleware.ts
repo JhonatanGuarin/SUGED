@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from 'express';
-// Asegúrate de importar tu cliente de Supabase (ajusta la ruta según tu proyecto)
 import { supabaseAdmin } from '../core/supabase.js'; 
 
 // Extendemos la interfaz Request de Express para que acepte nuestra variable "user"
@@ -7,10 +6,10 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
-// 1. EL GUARDIA PRINCIPAL: Verifica que el JWT sea válido
+// 1. Verifica que el JWT sea válido
 export const verificarToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    // Buscamos el token en la mochila de la petición (Headers)
+    
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -18,7 +17,7 @@ export const verificarToken = async (req: AuthRequest, res: Response, next: Next
       return;
     }
 
-    // Extraemos solo el token (quitamos la palabra "Bearer ")
+    // Extraemos solo el token 
     const token = authHeader.split(' ')[1];
 
     // Le pedimos a Supabase que valide este token criptográficamente
@@ -36,10 +35,8 @@ export const verificarToken = async (req: AuthRequest, res: Response, next: Next
       .eq('id', user.id)
       .single();
 
-    // Pegamos toda la información del usuario a la petición para que las siguientes funciones la usen
     req.user = { ...user, perfil: perfilUsuario };
     
-    // Le abrimos la puerta para que continúe a la ruta
     next();
   } catch (err) {
     console.error('Error en middleware de autenticación:', err);
@@ -47,9 +44,9 @@ export const verificarToken = async (req: AuthRequest, res: Response, next: Next
   }
 };
 
-// 2. EL GUARDIA VIP: Verifica que el usuario sea ADMIN
+// 2. Verifica que el usuario sea ADMIN
 export const requerirAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
-  // Primero revisamos si pasó por el guardia principal
+
   if (!req.user || !req.user.perfil) {
     res.status(401).json({ error: 'Acceso denegado: Usuario no autenticado.' });
     return;

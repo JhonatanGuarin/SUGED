@@ -12,7 +12,6 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Montamos el dominio de escenarios
 app.use('/api/escenarios', escenariosRoutes);
 app.use('/api/reservas', reservasRoutes);
 

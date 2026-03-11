@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // Importamos el hook de navegación
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { supabase } from '../../app/supabase';
 import { Activity, MapPin, Clock, Ticket, AlertCircle, CheckCircle2, UserCircle } from 'lucide-react';
 
 export default function Inicio() {
   const { perfil, session } = useAuth();
-  const navigate = useNavigate(); // Instanciamos la navegación
+  const navigate = useNavigate(); 
   const [cargando, setCargando] = useState(true);
   
   // Estados para las métricas

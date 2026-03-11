@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../../core/supabase.js';
 export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: string) => {
   const dateObj = new Date(fecha);
   let diaSemana = dateObj.getDay();
-  diaSemana = diaSemana === 0 ? 7 : diaSemana; // Ajustamos domingo a 7
+  diaSemana = diaSemana === 0 ? 7 : diaSemana; 
 
   // A. Traer horario base del día
   const { data: horarioBase } = await supabaseAdmin
@@ -14,7 +14,7 @@ export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: stri
     .eq('dia_semana', diaSemana)
     .single();
 
-  if (!horarioBase) return []; // Si no hay horario, está cerrado todo el día
+  if (!horarioBase) return [];
 
   // B. Traer bloqueos excepcionales (mantenimientos/eventos)
   const { data: bloqueos } = await supabaseAdmin
@@ -80,23 +80,17 @@ export const crearHorario = async (escenarioId: string, datosHorario: any) => {
     .from('reservas')
     .select('id, fecha_reserva, hora_inicio, hora_fin')
     .eq('escenario_id', escenarioId)
-    // Extraemos el día de la semana de la fecha de la reserva usando PostgreSQL
-    // (EXTRACT(ISODOW FROM fecha_reserva) = datosHorario.dia_semana)
-    // Como estamos usando el cliente de Supabase, lo simulamos trayendo las reservas futuras
     .gte('fecha_reserva', hoy)
     .in('estado', ['PENDIENTE_APROBACION', 'APROBADA']);
 
   // B. Filtramos en memoria las reservas que caigan en el mismo día de la semana y choquen con el nuevo horario
   const reservasAfectadas = (colisiones || []).filter((reserva) => {
-    // 1. Verificar si el día de la semana coincide (1=Lunes ... 7=Domingo)
     const fechaObj = new Date(reserva.fecha_reserva);
     let diaReserva = fechaObj.getDay();
-    diaReserva = diaReserva === 0 ? 7 : diaReserva; // Ajuste para que Domingo sea 7
+    diaReserva = diaReserva === 0 ? 7 : diaReserva; 
 
     if (diaReserva !== datosHorario.dia_semana) return false;
 
-    // 2. Verificar si la reserva está "fuera de los límites" del nuevo horario
-    // ¿Empieza antes de que abran? O ¿Termina después de que cierren?
     const chocaApertura = reserva.hora_inicio < datosHorario.hora_apertura;
     const chocaCierre = reserva.hora_fin > datosHorario.hora_cierre;
 
@@ -131,8 +125,8 @@ export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
     .select('id')
     .eq('escenario_id', escenarioId)
     .eq('fecha_reserva', datosBloqueo.fecha)
-    .lt('hora_inicio', datosBloqueo.hora_fin) // Empieza antes de que termine el bloqueo
-    .gt('hora_fin', datosBloqueo.hora_inicio) // Termina después de que empiece el bloqueo
+    .lt('hora_inicio', datosBloqueo.hora_fin) 
+    .gt('hora_fin', datosBloqueo.hora_inicio) 
     .in('estado', ['PENDIENTE_APROBACION', 'APROBADA']);
 
   // B. Si la base de datos encuentra colisiones, abortamos y lanzamos el error
@@ -151,7 +145,7 @@ export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
   return data;
 };
 
-// 5. Eliminar un bloqueo (NUEVA FUNCIÓN)
+// 5. Eliminar un bloqueo
 export const eliminarBloqueoBase = async (id: string) => {
   const { error } = await supabaseAdmin
     .from('bloqueos_escenarios')

@@ -24,8 +24,8 @@ export const crearReservaBase = async (datosReserva: any) => {
       fecha_reserva: datosReserva.fecha_reserva,
       hora_inicio: datosReserva.hora_inicio,
       hora_fin: datosReserva.hora_fin,
-      estado: datosReserva.estado, // Ahora esto lo decide el Frontend (APROBADA o PENDIENTE)
-      comprobante_url: datosReserva.comprobante_url || null // Guardamos el link si existe
+      estado: datosReserva.estado,
+      comprobante_url: datosReserva.comprobante_url || null 
     }])
     .select()
     .single();

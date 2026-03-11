@@ -4,7 +4,6 @@ import { useAuth } from '../../app/AuthContext';
 import { MapPin, Users, DollarSign, X, Plus, Clock, Edit, Trash2, CalendarOff } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-// NUEVO: Importamos nuestra herramienta para peticiones seguras
 import { fetchAPI } from '../../utils/api';
 
 interface Escenario { id: string; nombre: string; descripcion: string; aforo: number; tarifa_hora: number; imagen_url: string; estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO'; }

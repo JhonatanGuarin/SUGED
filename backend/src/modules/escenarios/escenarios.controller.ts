@@ -11,7 +11,6 @@ import {
 
 export const getDisponibilidad = async (req: Request, res: Response): Promise<any> => {
   try {
-    // Le aseguramos a TypeScript que ambos valores serán tratados como texto (string)
     const escenarioId = req.params.id as string;
     const fecha = req.query.fecha as string;
 

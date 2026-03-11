@@ -1,6 +1,6 @@
-import { supabase } from '../app/supabase'; // Ajusta la ruta si es necesario
+import { supabase } from '../app/supabase'; 
 
-// Aquí defines la URL de tu backend. Luego la cambiaremos por la de tu VPS.
+// Aquí se define la URL de tu backend. Luego la cambiaremos por la de tu VPS.
 const API_BASE_URL = 'http://localhost:3000';
 
 export const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
@@ -15,7 +15,7 @@ export const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
     headers.set('Content-Type', 'application/json');
   }
 
-  // 3. LA MAGIA: Si hay una sesión activa, inyectamos el JWT en la cabecera Authorization
+  // 3. Si hay una sesión activa, inyectamos el JWT en la cabecera Authorization
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }

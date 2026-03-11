@@ -7,7 +7,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-// NUEVO: Importamos nuestra herramienta centralizada para peticiones
 import { fetchAPI } from '../../utils/api';
 
 interface Escenario { id: string; nombre: string; tarifa_hora: number; imagen_url: string; }

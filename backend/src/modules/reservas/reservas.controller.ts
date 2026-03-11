@@ -14,7 +14,7 @@ export const crearNuevaReserva = async (req: Request, res: Response): Promise<an
 export const cambiarEstadoReserva = async (req: Request, res: Response): Promise<any> => {
   try {
     const reservaId = req.params.id as string;
-    const { estado } = req.body; // Recibimos si es APROBADA o RECHAZADA
+    const { estado } = req.body; 
     
     const reserva = await actualizarEstadoReserva(reservaId, estado);
     return res.status(200).json(reserva);
