@@ -70,7 +70,6 @@ export default function Login() {
               </div>
               <div>
                 <h3 className="font-bold text-white">Espacios Múltiples</h3>
-                <p className="text-sm text-slate-400">Canchas, coliseos y pistas a tu disposición.</p>
               </div>
             </div>
             
@@ -80,7 +79,6 @@ export default function Login() {
               </div>
               <div>
                 <h3 className="font-bold text-white">Disponibilidad Real</h3>
-                <p className="text-sm text-slate-400">Horarios matemáticamente calculados y precisos.</p>
               </div>
             </div>
 
@@ -90,7 +88,6 @@ export default function Login() {
               </div>
               <div>
                 <h3 className="font-bold text-white">Acceso Seguro</h3>
-                <p className="text-sm text-slate-400">Ingreso exclusivo con tu correo institucional.</p>
               </div>
             </div>
           </div>
@@ -162,13 +159,6 @@ export default function Login() {
 
             {/* Cuerpo del Modal */}
             <div className="p-6 space-y-6">
-              <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desarrollo y Arquitectura</h3>
-                <p className="text-white font-medium flex items-center gap-2">
-                  <Code2 size={16} className="text-[#FFCC29]" /> Jhonatan Guarin
-                </p>
-                <p className="text-sm text-slate-400 mt-1 pl-6">Fullstack Developer</p>
-              </div>
 
               <div>
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Stack Tecnológico</h3>
