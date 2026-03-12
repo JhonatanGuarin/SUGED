@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../app/supabase';
 import { MapPin, Calendar, ShieldCheck, Info, X, Code2, Database, LayoutTemplate, Server, WifiOff } from 'lucide-react';
-import { toast } from 'sonner'; // Importamos la librería de notificaciones
-
+import { toast } from 'sonner';
 export default function Login() {
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [cargando, setCargando] = useState(false);
@@ -19,17 +18,15 @@ export default function Login() {
 
       if (error) throw error;
       
-      // Nota: Si todo sale bien, Supabase redirige la página, así que no necesitamos
-      // mostrar un mensaje de éxito aquí porque la página se recargará.
 
     } catch (error: any) {
       console.error('Error Login:', error);
       
-      // Notificación elegante de error
+
       toast.error('No se pudo iniciar sesión', {
         description: error.message || 'Verifica tu conexión a internet e inténtalo de nuevo.',
-        icon: <WifiOff size={18} />, // Icono opcional para hacerlo más visual
-        duration: 5000, // Dura 5 segundos
+        icon: <WifiOff size={18} />, 
+        duration: 5000,
       });
       
       setCargando(false);
