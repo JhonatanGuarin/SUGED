@@ -15,7 +15,7 @@ export const crearReservaBase = async (datosReserva: any) => {
     throw new Error('Lo sentimos, este horario acaba de ser reservado por alguien más.');
   }
 
-  // 2. Guardamos la reserva con el estado dinámico y el comprobante
+  // 2. Guardamos la reserva forzando el estado y eliminando el comprobante
   const { data, error } = await supabaseAdmin
     .from('reservas')
     .insert([{
@@ -24,8 +24,7 @@ export const crearReservaBase = async (datosReserva: any) => {
       fecha_reserva: datosReserva.fecha_reserva,
       hora_inicio: datosReserva.hora_inicio,
       hora_fin: datosReserva.hora_fin,
-      estado: datosReserva.estado,
-      comprobante_url: datosReserva.comprobante_url || null 
+      estado: 'PENDIENTE_APROBACION' // Forzamos el estado aquí
     }])
     .select()
     .single();

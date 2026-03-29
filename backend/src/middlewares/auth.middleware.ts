@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../core/supabase.js'; 
 
-// Extendemos la interfaz Request de Express para que acepte nuestra variable "user"
 export interface AuthRequest extends Request {
   user?: any;
 }
@@ -9,7 +8,6 @@ export interface AuthRequest extends Request {
 // 1. Verifica que el JWT sea válido
 export const verificarToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -46,18 +44,26 @@ export const verificarToken = async (req: AuthRequest, res: Response, next: Next
 
 // 2. Verifica que el usuario sea ADMIN
 export const requerirAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
-
   if (!req.user || !req.user.perfil) {
     res.status(401).json({ error: 'Acceso denegado: Usuario no autenticado.' });
     return;
   }
-
-  // Revisamos su rol
   if (req.user.perfil.rol !== 'ADMIN') {
     res.status(403).json({ error: 'Acceso prohibido: Esta acción requiere privilegios de Administrador.' });
     return;
   }
+  next();
+};
 
-  // Si es ADMIN, lo dejamos pasar
+// 3. NUEVO GUARDIA: Verifica que sea miembro UPTC o ADMIN
+export const requerirMiembroUPTC = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  if (!req.user || !req.user.perfil) {
+    res.status(401).json({ error: 'Acceso denegado: Usuario no autenticado.' });
+    return;
+  }
+  if (req.user.perfil.rol !== 'MEMBER_UPTC' && req.user.perfil.rol !== 'ADMIN') {
+    res.status(403).json({ error: 'Acceso prohibido: Solo los miembros de la UPTC pueden solicitar reservas.' });
+    return;
+  }
   next();
 };

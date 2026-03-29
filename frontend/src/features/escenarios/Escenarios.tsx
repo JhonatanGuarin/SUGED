@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../app/supabase'; 
 import { useAuth } from '../../app/AuthContext';
-import { MapPin, Users, DollarSign, X, Plus, Clock, Edit, Trash2, CalendarOff } from 'lucide-react';
+import { MapPin, Users, X, Plus, Clock, Edit, Trash2, CalendarOff, Repeat, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { fetchAPI } from '../../utils/api';
 
-interface Escenario { id: string; nombre: string; descripcion: string; aforo: number; tarifa_hora: number; imagen_url: string; estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO'; }
-interface Bloqueo { id: string; fecha: string; hora_inicio: string; hora_fin: string; motivo: string; }
+interface Escenario { id: string; nombre: string; descripcion: string; aforo: number; imagen_url: string; estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO'; }
+interface BloqueoPuntual { id: string; fecha: string; hora_inicio: string; hora_fin: string; motivo: string; }
+interface BloqueoFijo { id: string; dia_semana: number; hora_inicio: string; hora_fin: string; motivo: string; }
+
+const DIAS_SEMANA: Record<number, string> = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo' };
 
 export default function Escenarios() {
   const { perfil, session } = useAuth();
   const [escenarios, setEscenarios] = useState<Escenario[]>([]);
   const [cargando, setCargando] = useState(true);
+
+  // Estados en Tiempo Real
+  const [disponibilidadActual, setDisponibilidadActual] = useState<Record<string, 'LIBRE' | 'OCUPADO' | 'CERRADO' | 'CARGANDO'>>({});
+  const [reservasActuales, setReservasActuales] = useState<Record<string, any>>({});
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [escenarioEditando, setEscenarioEditando] = useState<Escenario | null>(null);
@@ -20,19 +27,134 @@ export default function Escenarios() {
 
   const [escenarioSeleccionado, setEscenarioSeleccionado] = useState<Escenario | null>(null);
   const [isHorarioModalOpen, setIsHorarioModalOpen] = useState(false);
+  
   const [isBloqueoModalOpen, setIsBloqueoModalOpen] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [tipoBloqueo, setTipoBloqueo] = useState<'PUNTUAL' | 'FIJO'>('PUNTUAL');
+  const [bloqueosActivos, setBloqueosActivos] = useState<BloqueoPuntual[]>([]);
+  const [bloqueosFijos, setBloqueosFijos] = useState<BloqueoFijo[]>([]);
   
-  const [bloqueosActivos, setBloqueosActivos] = useState<Bloqueo[]>([]);
   const [diaCompleto, setDiaCompleto] = useState(false);
-  
   const [fechaFiltro, setFechaFiltro] = useState<string>('');
 
   const obtenerEscenarios = async () => {
     setCargando(true);
     const { data, error } = await supabase.from('escenarios').select('*').order('creado_en', { ascending: false });
-    if (!error && data) setEscenarios(data);
+    if (!error && data) {
+      setEscenarios(data);
+      verificarDisponibilidadEnTiempoReal(data);
+    }
     setCargando(false);
+  };
+
+  const verificarDisponibilidadEnTiempoReal = async (escenariosData: Escenario[]) => {
+    const estadoInicial: Record<string, 'CARGANDO'> = {};
+    escenariosData.forEach(esc => estadoInicial[esc.id] = 'CARGANDO');
+    setDisponibilidadActual(estadoInicial);
+    
+    // Limpiamos el radar de reservas
+    setReservasActuales({});
+
+    const hoy = new Date();
+    const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const horaActualInt = hoy.getHours();
+    const horaActualStr = `${horaActualInt.toString().padStart(2, '0')}:00:00`;
+    
+    let diaSemana = hoy.getDay();
+    diaSemana = diaSemana === 0 ? 7 : diaSemana; 
+
+    await Promise.all(escenariosData.map(async (esc) => {
+      try {
+        if (esc.estado !== 'ACTIVO') {
+          setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
+          return;
+        }
+
+        const { data: horario } = await supabase
+          .from('horarios_escenarios')
+          .select('hora_apertura, hora_cierre')
+          .eq('escenario_id', esc.id)
+          .eq('dia_semana', diaSemana)
+          .maybeSingle();
+
+        if (!horario) {
+          setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
+          return;
+        }
+
+        const apertura = parseInt(horario.hora_apertura.split(':')[0]);
+        const cierre = parseInt(horario.hora_cierre.split(':')[0]);
+
+        if (horaActualInt < apertura || horaActualInt >= cierre) {
+          setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
+          return;
+        }
+
+        const res = await fetchAPI(`/api/escenarios/${esc.id}/disponibilidad?fecha=${fechaLocal}`);
+        
+        if (res.ok) {
+          const data = await res.json();
+          const estaLibre = data.libres.some((bloque: any) => bloque.hora_inicio === horaActualStr);
+          
+          if (estaLibre) {
+            setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'LIBRE' }));
+          } else {
+            setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'OCUPADO' }));
+            
+            // RADAR: Si soy admin y está ocupado, pregunto quién está adentro
+            if (perfil?.rol === 'ADMIN') {
+              const resReserva = await fetchAPI(`/api/escenarios/${esc.id}/reserva-actual`);
+              if (resReserva.ok) {
+                const dataReserva = await resReserva.json();
+                if (dataReserva.reserva) {
+                  setReservasActuales(prev => ({ ...prev, [esc.id]: dataReserva.reserva }));
+                }
+              }
+            }
+          }
+        } else {
+          setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'OCUPADO' }));
+        }
+      } catch (error) {
+        setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
+      }
+    }));
+  };
+
+  // NUEVA FUNCIÓN: Botón mágico del Administrador para liberar la cancha
+  const manejarLiberarEscenario = async (reservaId: string) => {
+    const confirmacion = await Swal.fire({
+      title: '¿Liberar Escenario?',
+      text: "La reserva actual se finalizará y el espacio quedará libre para otros estudiantes inmediatamente.",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981', // Verde éxito
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, liberar ahora',
+      cancelButtonText: 'Cancelar',
+      customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
+    const toastId = toast.loading('Liberando escenario...');
+    try {
+      // Reutilizamos la ruta que ya teníamos para cambiar estados
+      const res = await fetchAPI(`/api/reservas/${reservaId}/estado`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: 'FINALIZADA' })
+      });
+      
+      if (!res.ok) throw new Error((await res.json()).error);
+      
+      toast.success('Escenario liberado con éxito', { id: toastId });
+      
+      // Recargamos TODO para que la cancha se ponga verde mágicamente
+      obtenerEscenarios(); 
+    } catch (error: any) {
+      toast.error('Error al liberar', { description: error.message, id: toastId });
+    }
   };
 
   useEffect(() => { obtenerEscenarios(); }, []);
@@ -60,14 +182,16 @@ export default function Escenarios() {
       }
 
       const datosEscenario = {
-        nombre: formData.get('nombre'), descripcion: formData.get('descripcion'), aforo: parseInt(formData.get('aforo') as string) || 0,
-        tarifa_hora: parseInt(formData.get('tarifa_hora') as string) || 0, estado: formData.get('estado'), imagen_url: imagen_url_final
+        nombre: formData.get('nombre'), 
+        descripcion: formData.get('descripcion'), 
+        aforo: parseInt(formData.get('aforo') as string) || 0,
+        estado: formData.get('estado'), 
+        imagen_url: imagen_url_final
       };
 
       const endpoint = escenarioEditando ? `/api/escenarios/${escenarioEditando.id}` : '/api/escenarios';
       const method = escenarioEditando ? 'PUT' : 'POST';
 
-      // USAMOS FETCHAPI
       const res = await fetchAPI(endpoint, { 
         method, 
         headers: { 'Content-Type': 'application/json' }, 
@@ -103,7 +227,6 @@ export default function Escenarios() {
     if (!confirmacion.isConfirmed) return;
 
     try {
-      // USAMOS FETCHAPI
       const res = await fetchAPI(`/api/escenarios/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error);
       obtenerEscenarios();
@@ -121,7 +244,6 @@ export default function Escenarios() {
     const datos = { dia_semana: parseInt(formData.get('dia_semana') as string), hora_apertura: `${formData.get('hora_apertura')}:00`, hora_cierre: `${formData.get('hora_cierre')}:00` };
     setProcesando(true);
     try {
-      // USAMOS FETCHAPI
       const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/horarios`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -130,6 +252,7 @@ export default function Escenarios() {
       if (!res.ok) throw new Error((await res.json()).error);
       toast.success('Horario asignado correctamente');
       setIsHorarioModalOpen(false);
+      obtenerEscenarios(); 
     } catch (error: any) { 
       toast.error('Error al asignar horario', { description: error.message }); 
     } finally { 
@@ -140,18 +263,18 @@ export default function Escenarios() {
   // --- BLOQUEOS ---
   const cargarBloqueos = async (escenarioId: string) => {
     const hoy = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('bloqueos_escenarios')
-      .select('*')
-      .eq('escenario_id', escenarioId)
-      .gte('fecha', hoy)
-      .order('fecha', { ascending: true });
-    if (data) setBloqueosActivos(data);
+    const [resPuntuales, resFijos] = await Promise.all([
+      supabase.from('bloqueos_escenarios').select('*').eq('escenario_id', escenarioId).gte('fecha', hoy).order('fecha', { ascending: true }),
+      supabase.from('bloqueos_recurrentes').select('*').eq('escenario_id', escenarioId).order('dia_semana', { ascending: true })
+    ]);
+    if (resPuntuales.data) setBloqueosActivos(resPuntuales.data);
+    if (resFijos.data) setBloqueosFijos(resFijos.data);
   };
 
   const abrirModalBloqueos = (escenario: Escenario) => {
     setEscenarioSeleccionado(escenario);
     setDiaCompleto(false);
+    setTipoBloqueo('PUNTUAL');
     const hoy = new Date().toISOString().split('T')[0];
     setFechaFiltro(hoy);
     cargarBloqueos(escenario.id);
@@ -166,41 +289,46 @@ export default function Escenarios() {
     let hInicio = formData.get('hora_inicio') as string;
     let hFin = formData.get('hora_fin') as string;
 
-    if (diaCompleto) { hInicio = "00:00:00"; hFin = "23:59:59"; } 
-    else { hInicio = `${hInicio}:00`; hFin = `${hFin}:00`; }
-
-    const datos = { fecha: fechaFiltro, hora_inicio: hInicio, hora_fin: hFin, motivo: formData.get('motivo') };
+    if (diaCompleto && tipoBloqueo === 'PUNTUAL') { 
+      hInicio = "00:00:00"; hFin = "23:59:59"; 
+    } else { 
+      hInicio = `${hInicio}:00`; hFin = `${hFin}:00`; 
+    }
 
     setProcesando(true);
+
     try {
-      // USAMOS FETCHAPI
-      const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/bloqueos`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(datos) 
-      });
-      if (!res.ok) throw new Error((await res.json()).error);
+      if (tipoBloqueo === 'PUNTUAL') {
+        const datosPuntual = { fecha: formData.get('fecha'), hora_inicio: hInicio, hora_fin: hFin, motivo: formData.get('motivo') };
+        const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/bloqueos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosPuntual) });
+        if (!res.ok) throw new Error((await res.json()).error);
+      } else {
+        const datosFijo = { dia_semana: parseInt(formData.get('dia_semana') as string), hora_inicio: hInicio, hora_fin: hFin, motivo: formData.get('motivo') };
+        const res = await fetchAPI(`/api/escenarios/${escenarioSeleccionado.id}/bloqueos-recurrentes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosFijo) });
+        if (!res.ok) throw new Error((await res.json()).error);
+      }
       
       (e.target as HTMLFormElement).reset();
       setDiaCompleto(false);
       cargarBloqueos(escenarioSeleccionado.id);
-      toast.success('Bloqueo registrado correctamente');
+      obtenerEscenarios(); 
+      toast.success(tipoBloqueo === 'PUNTUAL' ? 'Bloqueo registrado correctamente' : 'Entrenamiento fijo asignado');
     } catch (error: any) { 
-      toast.error('Error al bloquear fecha', { description: error.message }); 
+      toast.error('Error al registrar', { description: error.message }); 
     } finally { 
       setProcesando(false); 
     }
   };
 
-  const eliminarBloqueo = async (bloqueoId: string) => {
+  const eliminarBloqueo = async (bloqueoId: string, tipo: 'PUNTUAL' | 'FIJO') => {
     const confirmacion = await Swal.fire({
       title: '¿Quitar bloqueo?',
-      text: "El escenario volverá a estar disponible para reservas en esa fecha.",
+      text: "El escenario volverá a estar disponible para reservas en ese horario.",
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#1A1A1A',
       cancelButtonColor: '#64748b',
-      confirmButtonText: 'Sí, liberar fecha',
+      confirmButtonText: 'Sí, liberar horario',
       cancelButtonText: 'Cancelar',
       customClass: { popup: 'rounded-2xl' }
     });
@@ -208,17 +336,18 @@ export default function Escenarios() {
     if (!confirmacion.isConfirmed) return;
 
     try {
-      // USAMOS FETCHAPI
-      const res = await fetchAPI(`/api/escenarios/bloqueos/${bloqueoId}`, { method: 'DELETE' });
+      const endpoint = tipo === 'PUNTUAL' ? `/api/escenarios/bloqueos/${bloqueoId}` : `/api/escenarios/bloqueos-recurrentes/${bloqueoId}`;
+      const res = await fetchAPI(endpoint, { method: 'DELETE' });
       if (!res.ok) throw new Error("Error al eliminar");
       cargarBloqueos(escenarioSeleccionado!.id); 
-      toast.success('Bloqueo eliminado correctamente');
+      obtenerEscenarios(); 
+      toast.success('Horario liberado correctamente');
     } catch (error: any) { 
-      toast.error('Error al eliminar el bloqueo', { description: error.message }); 
+      toast.error('Error al eliminar', { description: error.message }); 
     }
   };
 
-  const bloqueosFiltrados = bloqueosActivos.filter(b => b.fecha === fechaFiltro);
+  const bloqueosPuntualesFiltrados = bloqueosActivos.filter(b => b.fecha === fechaFiltro);
 
   return (
     <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-slate-200 min-h-[80vh] relative">
@@ -233,16 +362,50 @@ export default function Escenarios() {
             <div key={escenario.id} className="border border-slate-200 rounded-xl overflow-hidden hover:shadow-lg transition-shadow bg-white flex flex-col group">
               <div className="h-40 md:h-48 bg-slate-100 w-full relative overflow-hidden">
                 {escenario.imagen_url ? (<img src={escenario.imagen_url} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />) : <div className="h-full w-full flex items-center justify-center text-slate-400">Sin imagen</div>}
-                <div className="absolute top-3 right-3"><span className={`text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full shadow-sm uppercase tracking-wide ${escenario.estado === 'ACTIVO' ? 'bg-green-500 text-white' : escenario.estado === 'MANTENIMIENTO' ? 'bg-[#FFCC29] text-[#1A1A1A]' : 'bg-red-500 text-white'}`}>{escenario.estado}</span></div>
+                
+                {/* 🔴 INDICADOR EN TIEMPO REAL */}
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-sm shadow-sm text-[10px] md:text-xs font-bold text-[#1A1A1A] transition-all">
+                  {disponibilidadActual[escenario.id] === 'CARGANDO' && (<><span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse"></span> Calculando...</>)}
+                  {disponibilidadActual[escenario.id] === 'LIBRE' && (<><span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></span> Libre Ahora</>)}
+                  {disponibilidadActual[escenario.id] === 'OCUPADO' && (<><span className="w-2 h-2 rounded-full bg-red-500"></span> Ocupado</>)}
+                  {disponibilidadActual[escenario.id] === 'CERRADO' && (<><span className="w-2 h-2 rounded-full bg-slate-400"></span> Cerrado</>)}
+                </div>
+
+                <div className="absolute top-3 right-3"><span className={`text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full shadow-sm uppercase tracking-wide ${escenario.estado === 'ACTIVO' ? 'bg-[#1A1A1A]/80 text-white backdrop-blur-sm' : escenario.estado === 'MANTENIMIENTO' ? 'bg-[#FFCC29] text-[#1A1A1A]' : 'bg-red-500 text-white'}`}>{escenario.estado === 'ACTIVO' ? 'Habilitado' : escenario.estado}</span></div>
               </div>
+              
               <div className="p-4 md:p-5 flex-1 flex flex-col">
                 <h3 className="text-lg md:text-xl font-bold text-[#1A1A1A] mb-1">{escenario.nombre}</h3><p className="text-slate-600 text-xs md:text-sm mb-4 line-clamp-2 flex-1">{escenario.descripcion}</p>
-                <div className="flex flex-col gap-3 text-xs md:text-sm text-slate-700 mt-auto border-t border-slate-100 pt-4">
-                <div className="flex justify-between items-center"><span className="flex items-center gap-2"><Users size={16} className="text-slate-400" /> Aforo: <strong className="text-[#1A1A1A]">{escenario.aforo}</strong></span>{perfil?.rol === 'MEMBER_UPTC' ? (<span className="text-green-700 font-bold text-[10px] md:text-xs bg-green-50 px-2 py-1 rounded border border-green-200 uppercase tracking-wide">Gratuito (UPTC)</span>) : (<span className="flex items-center gap-2"><DollarSign size={16} className="text-slate-400" /> <strong className="text-[#1A1A1A]">${escenario.tarifa_hora}/hr</strong></span>)}</div>
+                
+                <div className="flex flex-col mt-auto border-t border-slate-100 pt-4">
+                  <div className="flex items-center gap-2 mb-3 text-xs md:text-sm text-slate-700"><Users size={16} className="text-slate-400" /> Aforo máximo: <strong className="text-[#1A1A1A]">{escenario.aforo} personas</strong></div>
+                  
+                  {/* PANEL DE LIBERACIÓN (Solo Admin + Ocupado por Estudiante) */}
+                  {perfil?.rol === 'ADMIN' && disponibilidadActual[escenario.id] === 'OCUPADO' && reservasActuales[escenario.id] && (
+                    <div className="mb-3 bg-red-50 border border-red-100 p-3 rounded-xl animate-in fade-in">
+                      <p className="text-xs text-red-600 font-bold mb-2 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                        En uso: {reservasActuales[escenario.id].usuarios?.nombre_completo}
+                      </p>
+                      <button 
+                        onClick={() => manejarLiberarEscenario(reservasActuales[escenario.id].id)}
+                        className="w-full bg-white border border-red-200 text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 size={14} /> Finalizar y Liberar
+                      </button>
+                    </div>
+                  )}
+
                   {perfil?.rol === 'ADMIN' && (
                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-50">
-                      <div className="flex gap-1"><button onClick={() => { setEscenarioSeleccionado(escenario); setIsHorarioModalOpen(true); }} className="p-2 text-slate-400 hover:text-[#1A1A1A] hover:bg-[#FFCC29] rounded-md transition-colors" title="Horario Rutina"><Clock size={18} /></button><button onClick={() => abrirModalBloqueos(escenario)} className="p-2 text-slate-400 hover:text-white hover:bg-red-500 rounded-md transition-colors" title="Bloquear Fecha"><CalendarOff size={18} /></button></div>
-                      <div className="flex gap-1"><button onClick={() => abrirModalEditar(escenario)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><Edit size={18} /></button><button onClick={() => manejarEliminar(escenario.id)} className="p-2 text-slate-400 hover:text-white hover:bg-red-600 rounded-md transition-colors"><Trash2 size={18} /></button></div>
+                      <div className="flex gap-1">
+                        <button onClick={() => { setEscenarioSeleccionado(escenario); setIsHorarioModalOpen(true); }} className="p-2 text-slate-400 hover:text-[#1A1A1A] hover:bg-[#FFCC29] rounded-md transition-colors" title="Horario Base"><Clock size={18} /></button>
+                        <button onClick={() => abrirModalBloqueos(escenario)} className="p-2 text-slate-400 hover:text-white hover:bg-red-500 rounded-md transition-colors" title="Gestión de Bloqueos"><CalendarOff size={18} /></button>
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => abrirModalEditar(escenario)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><Edit size={18} /></button>
+                        <button onClick={() => manejarEliminar(escenario.id)} className="p-2 text-slate-400 hover:text-white hover:bg-red-600 rounded-md transition-colors"><Trash2 size={18} /></button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -256,22 +419,15 @@ export default function Escenarios() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Cabecera fija */}
             <div className="flex justify-between items-center p-4 md:p-5 border-b border-slate-100 bg-slate-50 shrink-0">
               <h2 className="text-lg md:text-xl font-bold text-[#1A1A1A]">{escenarioEditando ? 'Editar Escenario' : 'Registrar Escenario'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-[#1A1A1A] transition-colors"><X size={24} /></button>
             </div>
             
-            {/* Cuerpo Scrolleable */}
             <form onSubmit={manejarGuardarEscenario} className="p-4 md:p-6 overflow-y-auto space-y-4 flex-1">
               <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Nombre *</label><input required name="nombre" defaultValue={escenarioEditando?.nombre} type="text" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
               <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Descripción</label><textarea name="descripcion" defaultValue={escenarioEditando?.descripcion} rows={3} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] resize-none" /></div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Aforo *</label><input required name="aforo" defaultValue={escenarioEditando?.aforo || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
-                <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Tarifa/Hora *</label><input required name="tarifa_hora" defaultValue={escenarioEditando?.tarifa_hora || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
-              </div>
-              
+              <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Aforo máximo *</label><input required name="aforo" defaultValue={escenarioEditando?.aforo || 0} type="number" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29]" /></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Estado</label><select name="estado" defaultValue={escenarioEditando?.estado || 'ACTIVO'} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white"><option value="ACTIVO">Activo</option><option value="MANTENIMIENTO">Mantenimiento</option><option value="INACTIVO">Inactivo</option></select></div>
                 <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Foto del Escenario</label><input name="imagen_archivo" type="file" accept="image/*" className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-[#FFCC29] bg-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-[#FFCC29]/20 file:text-[#1A1A1A] hover:file:bg-[#FFCC29]/30 transition-all cursor-pointer" /></div>
@@ -286,12 +442,12 @@ export default function Escenarios() {
         </div>
       )}
 
-      {/* MODAL HORARIOS */}
+      {/* MODAL HORARIOS (Base) */}
       {isHorarioModalOpen && escenarioSeleccionado && (
         <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
             <div className="flex justify-between items-center p-4 md:p-5 border-b border-slate-100 bg-[#FFCC29] shrink-0">
-              <h2 className="text-lg font-bold text-[#1A1A1A] flex items-center gap-2"><Clock size={20}/> Horario Rutina</h2>
+              <h2 className="text-lg font-bold text-[#1A1A1A] flex items-center gap-2"><Clock size={20}/> Horario Base</h2>
               <button onClick={() => setIsHorarioModalOpen(false)} className="text-[#1A1A1A]/70 hover:text-[#1A1A1A]"><X size={24} /></button>
             </div>
             
@@ -309,83 +465,115 @@ export default function Escenarios() {
         </div>
       )}
 
-      {/* MODAL BLOQUEOS */}
+      {/* MODAL BLOQUEOS Y ENTRENAMIENTOS FIJOS */}
       {isBloqueoModalOpen && escenarioSeleccionado && (
         <div className="fixed inset-0 bg-[#1A1A1A]/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
             
             <div className="flex justify-between items-center p-4 md:p-5 border-b border-red-500 bg-red-50 shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-red-700 flex items-center gap-2"><CalendarOff size={20}/> Gestión de Bloqueos</h2>
+                <h2 className="text-lg font-bold text-red-700 flex items-center gap-2"><CalendarOff size={20}/> Gestión de Restricciones</h2>
                 <p className="text-xs text-red-600 mt-1">{escenarioSeleccionado.nombre}</p>
               </div>
               <button onClick={() => setIsBloqueoModalOpen(false)} className="text-red-400 hover:text-red-700"><X size={24} /></button>
             </div>
 
-            <div className="flex flex-col overflow-y-auto flex-1">
-              <form onSubmit={manejarGuardarBloqueo} className="p-4 md:p-5 border-b border-slate-200 bg-white">
-                <h3 className="text-sm font-bold text-[#1A1A1A] mb-4 uppercase tracking-wider text-slate-500">Nuevo Bloqueo</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Fecha Exacta *</label>
-                    <input required name="fecha" type="date" min={new Date().toISOString().split('T')[0]} value={fechaFiltro} onChange={(e) => setFechaFiltro(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="diaCompleto" checked={diaCompleto} onChange={(e) => setDiaCompleto(e.target.checked)} className="w-4 h-4 text-red-600 rounded border-slate-300 focus:ring-red-500"/>
-                    <label htmlFor="diaCompleto" className="text-sm font-medium text-slate-700 cursor-pointer">Bloquear día completo</label>
-                  </div>
+            {/* PESTAÑAS */}
+            <div className="flex bg-slate-100 p-1 shrink-0 border-b border-slate-200">
+              <button onClick={() => setTipoBloqueo('PUNTUAL')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center gap-2 ${tipoBloqueo === 'PUNTUAL' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><CalendarOff size={16}/> Día Específico</button>
+              <button onClick={() => setTipoBloqueo('FIJO')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors flex items-center justify-center gap-2 ${tipoBloqueo === 'FIJO' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><Repeat size={16}/> Horario Fijo</button>
+            </div>
 
-                  {!diaCompleto && (
-                    <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                      <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Desde *</label><input required={!diaCompleto} name="hora_inicio" type="time" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" /></div>
-                      <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Hasta *</label><input required={!diaCompleto} name="hora_fin" type="time" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" /></div>
+            <div className="flex flex-col md:flex-row overflow-y-auto flex-1">
+              <form onSubmit={manejarGuardarBloqueo} className="p-4 md:p-5 border-b md:border-b-0 md:border-r border-slate-200 bg-white md:w-1/2">
+                <h3 className="text-sm font-bold text-[#1A1A1A] mb-4 uppercase tracking-wider text-slate-500">
+                  {tipoBloqueo === 'PUNTUAL' ? 'Bloqueo Excepcional' : 'Nuevo Horario Fijo'}
+                </h3>
+                
+                <div className="space-y-4">
+                  {tipoBloqueo === 'PUNTUAL' ? (
+                    <div>
+                      <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Fecha Exacta *</label>
+                      <input required name="fecha" type="date" min={new Date().toISOString().split('T')[0]} value={fechaFiltro} onChange={(e) => setFechaFiltro(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Día de la semana *</label>
+                      <select required name="dia_semana" className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-[#FFCC29] bg-white">
+                        <option value="">Seleccione un día...</option>
+                        {Object.entries(DIAS_SEMANA).map(([num, nombre]) => <option key={num} value={num}>{nombre}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  
+                  {tipoBloqueo === 'PUNTUAL' && (
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" id="diaCompleto" checked={diaCompleto} onChange={(e) => setDiaCompleto(e.target.checked)} className="w-4 h-4 text-red-600 rounded border-slate-300 focus:ring-red-500"/>
+                      <label htmlFor="diaCompleto" className="text-sm font-medium text-slate-700 cursor-pointer">Bloquear día completo</label>
+                    </div>
+                  )}
+
+                  {(!diaCompleto || tipoBloqueo === 'FIJO') && (
+                    <div className="grid grid-cols-2 gap-4 animate-in fade-in">
+                      <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Desde *</label><input required name="hora_inicio" type="time" className={`w-full border border-slate-300 rounded-lg p-3 outline-none ${tipoBloqueo === 'PUNTUAL' ? 'focus:border-red-500' : 'focus:border-[#FFCC29]'}`} /></div>
+                      <div><label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Hasta *</label><input required name="hora_fin" type="time" className={`w-full border border-slate-300 rounded-lg p-3 outline-none ${tipoBloqueo === 'PUNTUAL' ? 'focus:border-red-500' : 'focus:border-[#FFCC29]'}`} /></div>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Motivo *</label>
-                    <input required name="motivo" type="text" placeholder="Ej. Torneo Interfacultades..." className="w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-red-500" />
+                    <label className="block text-sm font-bold text-[#1A1A1A] mb-1.5">Motivo / Actividad *</label>
+                    <input required name="motivo" type="text" placeholder={tipoBloqueo === 'PUNTUAL' ? "Ej. Mantenimiento..." : "Ej. Entrenamiento Futsal..."} className={`w-full border border-slate-300 rounded-lg p-3 outline-none ${tipoBloqueo === 'PUNTUAL' ? 'focus:border-red-500' : 'focus:border-[#FFCC29]'}`} />
                   </div>
                   
                   <div className="flex justify-end mt-2">
-                    <button type="submit" disabled={procesando} className="bg-red-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-red-700 transition-colors">
-                      {procesando ? 'Procesando...' : 'Añadir Bloqueo'}
+                    <button type="submit" disabled={procesando} className={`px-5 py-2.5 rounded-lg font-bold transition-colors text-white ${tipoBloqueo === 'PUNTUAL' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#1A1A1A] hover:bg-black'}`}>
+                      {procesando ? 'Procesando...' : (tipoBloqueo === 'PUNTUAL' ? 'Añadir Bloqueo' : 'Fijar Horario')}
                     </button>
                   </div>
                 </div>
               </form>
 
-              {/* LISTA FILTRADA */}
-              <div className="p-4 md:p-5 bg-slate-50 flex-1">
+              <div className="p-4 md:p-5 bg-slate-50 flex-1 md:w-1/2">
                 <h3 className="text-sm font-bold text-[#1A1A1A] mb-4 uppercase tracking-wider text-slate-500">
-                  Bloqueos para el {fechaFiltro || 'día seleccionado'}
+                  {tipoBloqueo === 'PUNTUAL' ? `Bloqueos para el ${fechaFiltro || 'día seleccionado'}` : 'Entrenamientos Fijos Activos'}
                 </h3>
                 
-                {bloqueosFiltrados.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-4 italic">El escenario está libre de bloqueos este día.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {bloqueosFiltrados.map((bloqueo) => (
-                      <div key={bloqueo.id} className="flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
-                        <div>
-                          <p className="font-bold text-[#1A1A1A] text-sm">{bloqueo.motivo}</p>
-                          <p className="text-xs text-slate-500">
-                            {bloqueo.hora_inicio === '00:00:00' && bloqueo.hora_fin === '23:59:59' 
-                              ? 'Todo el día' 
-                              : `De ${bloqueo.hora_inicio.slice(0,5)} a ${bloqueo.hora_fin.slice(0,5)}`}
-                          </p>
+                {tipoBloqueo === 'PUNTUAL' ? (
+                  bloqueosPuntualesFiltrados.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-4 italic">El escenario no tiene bloqueos puntuales este día.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {bloqueosPuntualesFiltrados.map((bloqueo) => (
+                        <div key={bloqueo.id} className="flex justify-between items-center p-3 bg-white border border-red-200 rounded-lg shadow-sm border-l-4 border-l-red-500">
+                          <div>
+                            <p className="font-bold text-[#1A1A1A] text-sm">{bloqueo.motivo}</p>
+                            <p className="text-xs text-slate-500">
+                              {bloqueo.hora_inicio === '00:00:00' && bloqueo.hora_fin === '23:59:59' ? 'Todo el día' : `De ${bloqueo.hora_inicio.slice(0,5)} a ${bloqueo.hora_fin.slice(0,5)}`}
+                            </p>
+                          </div>
+                          <button onClick={() => eliminarBloqueo(bloqueo.id, 'PUNTUAL')} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><Trash2 size={16} /></button>
                         </div>
-                        <button 
-                          onClick={() => eliminarBloqueo(bloqueo.id)}
-                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
-                          title="Eliminar bloqueo"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  bloqueosFijos.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-4 italic">No hay horarios fijos asignados.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {bloqueosFijos.map((bloqueo) => (
+                        <div key={bloqueo.id} className="flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm border-l-4 border-l-[#1A1A1A]">
+                          <div>
+                            <p className="font-bold text-[#1A1A1A] text-sm">{bloqueo.motivo}</p>
+                            <p className="text-xs text-slate-500 font-medium">
+                              {DIAS_SEMANA[bloqueo.dia_semana]} • {bloqueo.hora_inicio.slice(0,5)} a {bloqueo.hora_fin.slice(0,5)}
+                            </p>
+                          </div>
+                          <button onClick={() => eliminarBloqueo(bloqueo.id, 'FIJO')} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><Trash2 size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             </div>

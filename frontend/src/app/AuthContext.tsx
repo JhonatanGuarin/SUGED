@@ -6,6 +6,9 @@ interface PerfilUsuario {
   nombre_completo: string;
   rol: 'ADMIN' | 'MEMBER_UPTC' | 'EXTERNAL';
   avatar_url: string;
+  documento: string | null;
+  codigo: string | null;
+  carrera: string | null;
 }
 
 interface AuthState {
@@ -13,6 +16,7 @@ interface AuthState {
   perfil: PerfilUsuario | null;
   cargando: boolean; 
   cerrarSesion: () => Promise<void>;
+  recargarPerfil: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -22,22 +26,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [perfil, setPerfil] = useState<PerfilUsuario | null>(null);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
-    const cargarDatosUsuario = async (sesionActual: Session | null) => {
-      if (sesionActual) {
-        const { data } = await supabase
-          .from('usuarios')
-          .select('nombre_completo, rol, avatar_url')
-          .eq('id', sesionActual.user.id)
-          .single();
-        
-        setPerfil(data);
-      } else {
-        setPerfil(null);
-      }
-      setCargando(false);
-    };
+  const cargarDatosUsuario = async (sesionActual: Session | null) => {
+    if (sesionActual) {
+      // Modificamos el select para incluir los nuevos campos
+      const { data } = await supabase
+        .from('usuarios')
+        .select('nombre_completo, rol, avatar_url, documento, codigo, carrera')
+        .eq('id', sesionActual.user.id)
+        .single();
+      
+      setPerfil(data);
+    } else {
+      setPerfil(null);
+    }
+    setCargando(false);
+  };
 
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       cargarDatosUsuario(session);
@@ -55,8 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const recargarPerfil = async () => {
+    await cargarDatosUsuario(session);
+  };
+
   return (
-    <AuthContext.Provider value={{ session, perfil, cargando, cerrarSesion }}>
+    <AuthContext.Provider value={{ session, perfil, cargando, cerrarSesion, recargarPerfil }}>
       {children}
     </AuthContext.Provider>
   );

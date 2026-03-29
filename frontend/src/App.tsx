@@ -1,12 +1,20 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './app/AuthContext';
-
+import type { ReactNode } from 'react'; 
 import Login from './features/auth/Login';
 import Dashboard from './features/dashboard/Dashboard';
 import Escenarios from './features/escenarios/Escenarios';
 import Reservas from './features/reservas/Reservas';
 import Layout from './components/layout/Layout';
 
+const RutaProtegida = ({ children, rolesPermitidos }: { children: ReactNode, rolesPermitidos: string[] }) => {
+  const { perfil } = useAuth();
+  if (perfil && !rolesPermitidos.includes(perfil.rol)) {
+    return <Navigate to="/escenarios" replace />;
+  }
+  
+  return <>{children}</>;
+};
 
 export default function App() {
   const { session, cargando } = useAuth();
@@ -20,10 +28,13 @@ export default function App() {
       <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
       
       <Route element={session ? <Layout /> : <Navigate to="/login" />}>
-        {/* Ya no necesitamos pasarle 'session={session!}' al Dashboard */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/escenarios" element={<Escenarios />} />
-        <Route path="/reservas" element={<Reservas />} />
+        <Route path="/reservas" element={
+          <RutaProtegida rolesPermitidos={['ADMIN', 'MEMBER_UPTC']}>
+            <Reservas />
+          </RutaProtegida>
+        } />
       </Route>
 
       <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} />} />

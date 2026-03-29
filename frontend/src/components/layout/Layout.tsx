@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { supabase } from '../../app/supabase';
-import { MapPin, Calendar, CreditCard, LogOut, Menu, X, User as UserIcon } from 'lucide-react';
+import { MapPin, Calendar, LogOut, Menu, X, User as UserIcon } from 'lucide-react';
 
 export default function Layout() {
   const { perfil, session } = useAuth();
@@ -17,9 +17,8 @@ export default function Layout() {
   // Definimos las rutas dinámicamente según el rol
   const navLinks = [
     { to: "/escenarios", icon: <MapPin size={20} />, label: "Escenarios" },
-    { to: "/reservas", icon: <Calendar size={20} />, label: perfil?.rol === 'ADMIN' ? "Todas las Reservas" : "Mis Reservas" },
-    // Ocultamos el módulo de pagos si no es ADMIN (podrás ajustarlo luego según tus RFs)
-    ...(perfil?.rol === 'ADMIN' ? [{ to: "/pagos", icon: <CreditCard size={20} />, label: "Pagos" }] : []),
+    ...(perfil?.rol === 'ADMIN' ? [{ to: "/reservas", icon: <Calendar size={20} />, label: "Todas las Reservas" }] : []),
+    ...(perfil?.rol === 'MEMBER_UPTC' ? [{ to: "/reservas", icon: <Calendar size={20} />, label: "Mis Reservas" }] : []),
   ];
 
   return (
@@ -140,7 +139,7 @@ export default function Layout() {
         />
       )}
 
-      {/* Área de Contenido Principal (donde cargan Escenarios, Reservas, etc.) */}
+      {/* Área de Contenido Principal */}
       <main className="flex-1 p-0 md:p-6 overflow-y-auto w-full mx-auto bg-slate-50">
         <div className="max-w-[1600px] mx-auto h-full">
           <Outlet />
