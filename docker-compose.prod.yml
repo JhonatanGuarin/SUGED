@@ -10,14 +10,12 @@ services:
       - "8080:80"
     restart: always
 
-
   suged-backend:
     container_name: suged-backend-prod
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    ports:
-      - "3001:3000"
+    # 👇 ADIÓS PUERTOS. Ahora es 100% privado.
     restart: always
     env_file:
       - ./backend/.env

@@ -1,10 +1,13 @@
 FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-# Instalamos solo dependencias reales (omite las de desarrollo)
-RUN npm install --production
-COPY . .
-EXPOSE 3000
 
-# IMPORTANTE: Asegúrate de tener el script "start" en tu package.json (ej. "start": "node index.js")
-CMD ["npm", "start"]
+WORKDIR /app
+
+# Copiamos dependencias e instalamos
+COPY package*.json ./
+RUN npm install
+
+# Copiamos el código fuente
+COPY . .
+
+# Usamos tsx para arrancar directamente tu archivo original. ¡Cero errores de rutas!
+CMD ["npx", "tsx", "src/index.ts"]
