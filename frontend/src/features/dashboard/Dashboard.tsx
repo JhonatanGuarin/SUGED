@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { supabase } from '../../app/supabase';
-import { Activity, MapPin, Clock, Ticket, AlertCircle, CheckCircle2, UserCircle } from 'lucide-react';
+import { Activity, MapPin, Clock, Ticket, AlertCircle, CheckCircle2, UserCircle, ChevronRight, Calendar, Sparkles } from 'lucide-react';
 
 export default function Inicio() {
   const { perfil, session } = useAuth();
   const navigate = useNavigate(); 
   const [cargando, setCargando] = useState(true);
   
-  // Estados para las métricas
+  // Estados para las métricas Admin
   const [metricasAdmin, setMetricasAdmin] = useState({ pendientes: 0, escenariosActivos: 0, reservasHoy: 0 });
+  
+  // Estados para el Usuario (Estudiante)
   const [misReservasFuturas, setMisReservasFuturas] = useState(0);
+  const [proximaReserva, setProximaReserva] = useState<any>(null);
 
   useEffect(() => {
     if (session && perfil) {
@@ -21,7 +24,9 @@ export default function Inicio() {
 
   const cargarDatosInicio = async () => {
     setCargando(true);
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = new Date();
+    const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const horaActualStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
 
     try {
       if (perfil?.rol === 'ADMIN') {
@@ -38,7 +43,7 @@ export default function Inicio() {
         const { count: countHoy } = await supabase
           .from('reservas')
           .select('*', { count: 'exact', head: true })
-          .eq('fecha_reserva', hoy)
+          .eq('fecha_reserva', fechaLocal)
           .in('estado', ['APROBADA', 'PENDIENTE_APROBACION']);
 
         setMetricasAdmin({
@@ -48,14 +53,28 @@ export default function Inicio() {
         });
 
       } else {
-        const { count: countMisReservas } = await supabase
+        const { data: reservasCandidatas } = await supabase
           .from('reservas')
-          .select('*', { count: 'exact', head: true })
+          .select('fecha_reserva, hora_inicio, hora_fin, escenarios(nombre), estado')
           .eq('usuario_id', session?.user.id)
-          .gte('fecha_reserva', hoy)
-          .in('estado', ['APROBADA', 'PENDIENTE_APROBACION']);
+          .gte('fecha_reserva', fechaLocal)
+          .in('estado', ['APROBADA', 'PENDIENTE_APROBACION'])
+          .order('fecha_reserva', { ascending: true })
+          .order('hora_inicio', { ascending: true });
           
-        setMisReservasFuturas(countMisReservas || 0);
+        if (reservasCandidatas) {
+          const reservasValidas = reservasCandidatas.filter(res => {
+            if (res.fecha_reserva > fechaLocal) return true; 
+            if (res.fecha_reserva === fechaLocal && res.hora_fin > horaActualStr) return true; 
+            return false; 
+          });
+
+          setMisReservasFuturas(reservasValidas.length);
+          setProximaReserva(reservasValidas[0] || null); 
+        } else {
+          setMisReservasFuturas(0);
+          setProximaReserva(null);
+        }
       }
     } catch (error) {
       console.error("Error cargando inicio:", error);
@@ -65,24 +84,48 @@ export default function Inicio() {
   };
 
   const nombrePila = perfil?.nombre_completo?.split(' ')[0] || 'Usuario';
+  
+  const opcionesFecha: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+  const fechaHoyStr = new Date().toLocaleDateString('es-ES', opcionesFecha);
+  const fechaCapitalizada = fechaHoyStr.charAt(0).toUpperCase() + fechaHoyStr.slice(1);
 
   if (cargando) {
-    return <div className="p-8 text-center text-slate-500 animate-pulse">Cargando tu resumen...</div>;
+    return <div className="flex justify-center items-center h-[50vh] text-slate-500 font-medium animate-pulse">Cargando tu resumen...</div>;
   }
 
   return (
-    <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-slate-200 min-h-[80vh]">
+    // LA SOLUCIÓN ESTÁ AQUÍ: px-4 py-6 md:p-0 le da el oxígeno arriba y a los lados en móvil
+    <div className="px-4 py-6 md:p-0 space-y-4 md:space-y-6">
       
-      {/* SALUDO GENERAL (Con icono profesional) */}
-      <div className="mb-8 pb-6 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black text-[#1A1A1A] mb-1 flex items-center gap-3">
-            <UserCircle className="text-[#FFCC29]" size={32} />
-            ¡Hola, {nombrePila}!
-          </h1>
-          <p className="text-slate-500 text-sm">
-            Bienvenido a SUGED - Sistema Universitario para Gestiones Deportivas
-          </p>
+      {/* ========================================== */}
+      {/* BANNER DE BIENVENIDA */}
+      {/* ========================================== */}
+      <div className="bg-[#1A1A1A] rounded-xl p-6 md:p-8 relative overflow-hidden shadow-md border border-[#FFCC29]/10">
+        <div className="absolute -top-24 -right-24 w-80 h-80 bg-[#FFCC29] rounded-full opacity-10 blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-white rounded-full opacity-5 blur-3xl pointer-events-none"></div>
+        
+        <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <div className="inline-block px-3 py-1 bg-white/10 rounded-lg text-[#FFCC29] text-[10px] md:text-xs font-bold uppercase tracking-widest mb-3 md:mb-4 border border-white/5 backdrop-blur-sm">
+              {fechaCapitalizada}
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black text-white mb-2 flex items-center gap-2 md:gap-3 tracking-tight">
+              ¡Hola, {nombrePila}!
+            </h1>
+            <p className="text-slate-400 text-xs md:text-sm max-w-md leading-relaxed">
+              Bienvenido a <span className="text-white font-bold">SUGED</span>. El centro de control para la infraestructura deportiva de la UPTC.
+            </p>
+          </div>
+
+          <div className="hidden md:flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10 backdrop-blur-sm">
+            <div className="w-12 h-12 bg-[#FFCC29] rounded-lg flex items-center justify-center text-[#1A1A1A] shadow-md shadow-[#FFCC29]/20">
+              <UserCircle size={28} />
+            </div>
+            <div className="pr-2">
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Tu Rol</p>
+              <p className="text-white font-bold">{perfil?.rol === 'ADMIN' ? 'Administrador' : 'Estudiante / Miembro'}</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -90,91 +133,126 @@ export default function Inicio() {
       {/* VISTA ADMINISTRADOR */}
       {/* ========================================== */}
       {perfil?.rol === 'ADMIN' && (
-        <div className="animate-in slide-in-from-bottom-4">
-          <h2 className="text-lg font-bold text-[#1A1A1A] mb-4 flex items-center gap-2">
-            <Activity className="text-[#FFCC29]" /> Resumen del Sistema
-          </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 animate-in slide-in-from-bottom-4">
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className={`p-6 rounded-2xl border-2 transition-all ${metricasAdmin.pendientes > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100'}`}>
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-xl ${metricasAdmin.pendientes > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'}`}>
-                  {metricasAdmin.pendientes > 0 ? <AlertCircle size={24} /> : <CheckCircle2 size={24} />}
-                </div>
+          <div className={`md:col-span-2 p-6 md:p-8 rounded-xl border ${metricasAdmin.pendientes > 0 ? 'bg-gradient-to-br from-white to-red-50/30 border-red-100 shadow-sm' : 'bg-white border-slate-200 shadow-sm'} relative overflow-hidden group transition-all`}>
+            {metricasAdmin.pendientes > 0 && <div className="absolute top-0 right-0 w-32 h-32 bg-red-500 opacity-5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>}
+            
+            <div className="flex items-center gap-3 mb-4 md:mb-6">
+              <div className={`p-2.5 md:p-3 rounded-lg ${metricasAdmin.pendientes > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                {metricasAdmin.pendientes > 0 ? <AlertCircle size={20} className="md:w-6 md:h-6" /> : <CheckCircle2 size={20} className="md:w-6 md:h-6" />}
               </div>
-              <p className="text-4xl font-black text-[#1A1A1A] mb-1">{metricasAdmin.pendientes}</p>
-              <p className="text-sm font-bold text-slate-600">Pagos por Auditar</p>
-              {metricasAdmin.pendientes > 0 && (
-                <p className="text-xs text-red-500 mt-2 font-medium">Requieren tu atención en Reservas.</p>
-              )}
+              <h2 className="text-base md:text-lg font-bold text-[#1A1A1A]">Centro de Aprobaciones</h2>
+            </div>
+            
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 md:gap-6">
+              <div>
+                <p className="text-5xl md:text-6xl font-black text-[#1A1A1A] tracking-tighter mb-1">{metricasAdmin.pendientes}</p>
+                <p className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-wider">Solicitudes Pendientes</p>
+                {metricasAdmin.pendientes > 0 ? (
+                  <p className="text-xs md:text-sm text-red-500 mt-1.5 md:mt-2 font-medium">Estudiantes esperando autorización para jugar.</p>
+                ) : (
+                  <p className="text-xs md:text-sm text-green-600 mt-1.5 md:mt-2 font-medium">¡Todo al día! No hay reservas pendientes.</p>
+                )}
+              </div>
+              
+              <button 
+                onClick={() => navigate('/reservas')} 
+                className={`w-full md:w-auto px-6 py-3.5 md:py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all text-sm md:text-base ${metricasAdmin.pendientes > 0 ? 'bg-[#1A1A1A] text-white hover:bg-black hover:shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                Revisar Solicitudes <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 md:gap-6">
+            <div className="p-5 md:p-6 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-2xl md:text-3xl font-black text-[#1A1A1A] mb-1">{metricasAdmin.reservasHoy}</p>
+                <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider">Reservas Hoy</p>
+              </div>
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
+                <Clock size={20} className="md:w-6 md:h-6" />
+              </div>
             </div>
 
-            <div className="p-6 rounded-2xl border-2 border-slate-100 bg-slate-50">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-xl bg-blue-100 text-blue-600">
-                  <Clock size={24} />
-                </div>
+            <div className="p-5 md:p-6 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-2xl md:text-3xl font-black text-[#1A1A1A] mb-1">{metricasAdmin.escenariosActivos}</p>
+                <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider">Escenarios Activos</p>
               </div>
-              <p className="text-4xl font-black text-[#1A1A1A] mb-1">{metricasAdmin.reservasHoy}</p>
-              <p className="text-sm font-bold text-slate-600">Reservas para Hoy</p>
-            </div>
-
-            <div className="p-6 rounded-2xl border-2 border-slate-100 bg-slate-50">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-xl bg-[#FFCC29]/20 text-[#1A1A1A]">
-                  <MapPin size={24} />
-                </div>
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
+                <MapPin size={20} className="md:w-6 md:h-6" />
               </div>
-              <p className="text-4xl font-black text-[#1A1A1A] mb-1">{metricasAdmin.escenariosActivos}</p>
-              <p className="text-sm font-bold text-slate-600">Escenarios Activos</p>
             </div>
           </div>
         </div>
       )}
 
       {/* ========================================== */}
-      {/* VISTA USUARIO (ESTUDIANTE / EXTERNO) */}
+      {/* VISTA USUARIO (TICKET VIP) */}
       {/* ========================================== */}
       {perfil?.rol !== 'ADMIN' && (
-        <div className="animate-in slide-in-from-bottom-4">
-          <div className="bg-[#1A1A1A] rounded-2xl p-6 md:p-10 text-white relative overflow-hidden shadow-lg">
-            
-            <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#FFCC29] rounded-full opacity-10 blur-3xl"></div>
-            
-            <div className="relative z-10">
-              <h2 className="text-2xl font-black mb-2">Tu actividad deportiva</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 animate-in slide-in-from-bottom-4">
+          
+          <div className="md:col-span-2 bg-gradient-to-br from-[#1A1A1A] to-[#2d2d2d] rounded-xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg border border-white/10 flex flex-col justify-between min-h-[220px]">
+            {/* Decoración Ticket: Vertical en PC, Horizontal en Móvil */}
+            <div className="hidden md:block absolute top-0 right-[25%] w-px h-full bg-white/10 border-dashed border-l border-white/20"></div>
+            <div className="hidden md:block absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full opacity-10"></div>
+            <div className="hidden md:block absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full opacity-10"></div>
+            <div className="md:hidden absolute bottom-[76px] left-0 w-full h-px border-dashed border-b border-white/20"></div>
+
+            <div className="relative z-10 mb-6 md:mb-0">
+              <h2 className="text-xs md:text-sm font-bold text-[#FFCC29] uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Sparkles size={16} /> Tu Próximo Partido
+              </h2>
               
-              <div className="flex items-end gap-3 mb-8">
-                <span className="text-5xl font-black text-[#FFCC29]">{misReservasFuturas}</span>
-                <span className="text-lg text-slate-300 pb-1">reservas próximas</span>
-              </div>
+              {proximaReserva ? (
+                <div>
+                  <p className="text-2xl md:text-3xl font-black text-white leading-tight mb-3 md:mb-4 pr-0 md:pr-32">{proximaReserva.escenarios?.nombre}</p>
+                  <div className="flex flex-wrap items-center gap-2 md:gap-4 text-slate-300 text-xs md:text-sm font-medium">
+                    <span className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg border border-white/5"><Calendar size={14} className="text-[#FFCC29]" /> {proximaReserva.fecha_reserva}</span>
+                    <span className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-lg border border-white/5"><Clock size={14} className="text-[#FFCC29]" /> {proximaReserva.hora_inicio.slice(0,5)} - {proximaReserva.hora_fin.slice(0,5)}</span>
+                    <span className={`px-2.5 py-1.5 md:px-3 rounded-lg text-[10px] md:text-xs font-bold uppercase tracking-wider border ${proximaReserva.estado === 'APROBADA' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>
+                      {proximaReserva.estado === 'APROBADA' ? 'Confirmada' : 'En Revisión'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-2xl md:text-3xl font-black text-slate-300 leading-tight mb-2">Sin reservas próximas</p>
+                  <p className="text-slate-400 text-xs md:text-sm max-w-sm">No tienes ningún partido agendado para esta semana. ¡Aprovecha que hay canchas libres!</p>
+                </div>
+              )}
+            </div>
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                {/* BOTONES CONECTADOS AL ENRUTADOR */}
-                <button 
-                  onClick={() => navigate('/reservas')} 
-                  className="bg-[#FFCC29] text-[#1A1A1A] px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#e6b825] transition-colors"
-                >
-                  <Ticket size={18} /> Nueva Reserva
-                </button>
-                <button 
-                  onClick={() => navigate('/reservas', { state: { pestaña: 'HISTORIAL' } })} 
-                  className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-white/20 transition-colors"
-                >
-                  <Clock size={18} /> Ver Historial
-                </button>
-              </div>
+            <div className="relative z-10 pt-4 md:pt-0 mt-auto md:absolute md:bottom-8 md:right-8">
+              <button onClick={() => navigate('/reservas')} className="w-full md:w-auto bg-[#FFCC29] text-[#1A1A1A] px-6 py-3.5 md:py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-[#e6b825] transition-transform md:hover:scale-105 shadow-md text-sm md:text-base">
+                <Ticket size={18} /> Agendar Ahora
+              </button>
             </div>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-6 border border-slate-200 rounded-2xl bg-slate-50">
-              <h3 className="font-bold text-[#1A1A1A] mb-2 flex items-center gap-2"><MapPin className="text-[#FFCC29]" size={18}/> ¿Sabías qué?</h3>
-              <p className="text-sm text-slate-600">
-                Al realizar una reserva, se generará un código QR único. Muéstralo en la entrada del escenario para validar tu acceso rápidamente.
-              </p>
+          <div className="flex flex-col gap-4 md:gap-6">
+            <div className="p-5 md:p-6 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col justify-center">
+              <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 md:mb-2">Total en Agenda</p>
+              <div className="flex items-end gap-2">
+                <p className="text-4xl md:text-5xl font-black text-[#1A1A1A] leading-none">{misReservasFuturas}</p>
+                <p className="text-xs md:text-sm text-slate-400 font-medium pb-1">reservas vigentes</p>
+              </div>
             </div>
+
+            <button onClick={() => navigate('/reservas', { state: { pestaña: 'HISTORIAL' } })} className="p-5 md:p-6 rounded-xl bg-slate-50 border border-slate-200 shadow-sm hover:bg-slate-100 transition-all flex items-center justify-between group">
+              <div className="text-left">
+                <p className="text-base md:text-lg font-bold text-[#1A1A1A] mb-0.5 md:mb-1">Mi Historial</p>
+                <p className="text-[10px] md:text-xs font-medium text-slate-500">Ver pases QR y pasados</p>
+              </div>
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-lg flex items-center justify-center text-slate-400 group-hover:text-[#1A1A1A] group-hover:translate-x-1 transition-all shadow-sm">
+                <ChevronRight size={18} />
+              </div>
+            </button>
           </div>
+
         </div>
       )}
 

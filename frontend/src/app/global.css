@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/* --- ARREGLO PARA QUE LAS HORAS SE VEAN AMPLIAS Y NO CORTADAS --- */
+
+/* 1. Hacemos la caja de horas más ancha (antes era de 85px) */
+.react-datepicker__time-container, 
+.react-datepicker__time-container .react-datepicker__time-box {
+  width: 130px !important;
+}
+
+/* 2. Le damos altura, centrado y respiración a cada hora de la lista */
+.react-datepicker__time-list-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 42px !important; /* Más altos para que parezcan botones reales */
+  padding: 0 !important;
+  margin: 6px 10px !important; /* Separación elegante entre las horas */
+  border-radius: 0.5rem !important; /* Bordes redondeados */
+  transition: all 0.2s;
+  width: auto !important; /* Para que el color cubra todo sin cortarse */
+}
+
+/* 3. Colores al pasar el mouse */
+.react-datepicker__time-list-item:hover {
+  background-color: #f1f5f9 !important;
+  color: #1A1A1A !important;
+}
+
+/* 4. Color cuando está seleccionado (El amarillo UPTC) */
+.react-datepicker__time-list-item--selected {
+  background-color: #FFCC29 !important;
+  color: #1A1A1A !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 6px -1px rgba(255, 204, 41, 0.4) !important; /* Pequeño brillo */
+}
