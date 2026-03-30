@@ -41,8 +41,9 @@ export default function Layout() {
       </div>
 
       {/* SIDEBAR (Menú lateral) */}
+      {/* 👇 AQUÍ ESTÁ LA MAGIA: md:sticky md:top-0 md:h-screen */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        fixed md:sticky md:top-0 md:h-screen inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Cabecera del Sidebar para móviles (Botón Cerrar) */}
@@ -93,7 +94,7 @@ export default function Layout() {
         </button>
 
         {/* Navegación Principal */}
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto scrollbar-hide">
           {navLinks.map((link) => (
             <NavLink
               key={link.to}

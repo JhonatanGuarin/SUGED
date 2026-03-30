@@ -73,7 +73,7 @@ export default function Login() {
                 </div>
                 <div>
                   <h3 className="font-bold text-white text-lg mb-1">Reserva de Escenarios</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">Accede a canchas múltiples, coliseos y espacios deportivos desde cualquier lugar.</p>
+                  <p className="text-slate-400 text-sm leading-relaxed">Accede a canchas múltiples y espacios deportivos desde cualquier lugar.</p>
                 </div>
               </div>
               
