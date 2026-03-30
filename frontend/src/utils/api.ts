@@ -1,7 +1,7 @@
 import { supabase } from '../app/supabase'; 
 
 // Aquí se define la URL de tu backend. Luego la cambiaremos por la de tu VPS.
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
   // 1. Obtenemos la sesión actual directamente de Supabase

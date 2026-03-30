@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  suged-frontend:
+    container_name: suged-frontend-prod
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "8080:80"
+    restart: always
+
+
+  suged-backend:
+    container_name: suged-backend-prod
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "3001:3000"
+    restart: always
+    env_file:
+      - ./backend/.env

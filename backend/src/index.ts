@@ -9,7 +9,14 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+const origenesPermitidos = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : ['http://localhost:5173'];
+
+app.use(cors({
+  origin: origenesPermitidos
+}));
+
 app.use(express.json());
 
 app.use('/api/escenarios', escenariosRoutes);
