@@ -17,7 +17,8 @@ export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: stri
 
   const { data: bloqueosPuntuales } = await supabaseAdmin.from('bloqueos_escenarios').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('fecha', fecha);
   const { data: bloqueosFijos } = await supabaseAdmin.from('bloqueos_recurrentes').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('dia_semana', diaSemana);
-  const { data: reservas } = await supabaseAdmin.from('reservas').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('fecha_reserva', fecha).in('estado', ['PENDIENTE_APROBACION', 'APROBADA']);
+
+  const { data: reservas } = await supabaseAdmin.from('reservas').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('fecha_reserva', fecha).in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
 
   const ocupados = [
     ...(bloqueosPuntuales || []), 
@@ -69,7 +70,6 @@ export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: stri
   return bloquesLibres;
 };
 
-// 2. Crear un escenario físico
 export const crearEscenarioBase = async (datosEscenario: any) => {
   delete datosEscenario.tarifa_hora; 
 
@@ -96,16 +96,16 @@ export const actualizarEscenarioBase = async (id: string, datos: any) => {
   return data;
 };
 
-// 3. Asignar o actualizar un horario recurrente (Con regla anti-colisiones)
 export const crearHorario = async (escenarioId: string, datosHorario: any) => {
   const hoy = new Date().toISOString().split('T')[0];
 
+  // ¡CORREGIDO AQUÍ!
   const { data: colisiones } = await supabaseAdmin
     .from('reservas')
     .select('id, fecha_reserva, hora_inicio, hora_fin')
     .eq('escenario_id', escenarioId)
     .gte('fecha_reserva', hoy)
-    .in('estado', ['PENDIENTE_APROBACION', 'APROBADA']);
+    .in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
 
   const reservasAfectadas = (colisiones || []).filter((reserva) => {
     const fechaObj = new Date(reserva.fecha_reserva);
@@ -137,8 +137,8 @@ export const crearHorario = async (escenarioId: string, datosHorario: any) => {
   return data;
 };
 
-// 4. Registrar un bloqueo puntual (excepción de un día)
 export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
+  // ¡CORREGIDO AQUÍ!
   const { data: colisiones } = await supabaseAdmin
     .from('reservas')
     .select('id')
@@ -146,7 +146,7 @@ export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
     .eq('fecha_reserva', datosBloqueo.fecha)
     .lt('hora_inicio', datosBloqueo.hora_fin) 
     .gt('hora_fin', datosBloqueo.hora_inicio) 
-    .in('estado', ['PENDIENTE_APROBACION', 'APROBADA']);
+    .in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
 
   if (colisiones && colisiones.length > 0) {
     throw new Error(`Acción rechazada: Hay ${colisiones.length} reserva(s) activa(s) o en revisión en ese rango de horas. Por favor, cancela esas reservas antes de bloquear el escenario.`);
@@ -162,7 +162,6 @@ export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
   return data;
 };
 
-// 5. Eliminar un bloqueo puntual
 export const eliminarBloqueoBase = async (id: string) => {
   const { error } = await supabaseAdmin
     .from('bloqueos_escenarios')
@@ -181,7 +180,6 @@ export const eliminarEscenarioBase = async (id: string) => {
   return true;
 };
 
-// --- FUNCIONES PARA BLOQUEOS RECURRENTES (FIJOS) ---
 export const crearBloqueoRecurrente = async (escenarioId: string, datosBloqueoFijo: any) => {
   const { data, error } = await supabaseAdmin
     .from('bloqueos_recurrentes')
@@ -206,7 +204,9 @@ export const obtenerReservaActual = async (escenarioId: string) => {
   const now = new Date();
   const colombiaTime = new Date(now.getTime() - (5 * 3600 * 1000));
   const fechaLocal = colombiaTime.toISOString().split('T')[0];
-  const horaActualStr = `${colombiaTime.getUTCHours().toString().padStart(2, '0')}:00:00`;
+  
+  // ¡CORRECCIÓN 1! Usamos la hora exacta con minutos y segundos (ej. 15:48:11)
+  const horaExactaStr = colombiaTime.toISOString().substring(11, 19); 
 
   const { data, error } = await supabaseAdmin
     .from('reservas')
@@ -218,9 +218,10 @@ export const obtenerReservaActual = async (escenarioId: string) => {
     `)
     .eq('escenario_id', escenarioId)
     .eq('fecha_reserva', fechaLocal)
-    .eq('estado', 'APROBADA')
-    .lte('hora_inicio', horaActualStr)
-    .gt('hora_fin', horaActualStr)    
+    // ¡CORRECCIÓN 2! Incluimos FINALIZADA para que siga mostrando el panel rojo tras escanear
+    .in('estado', ['APROBADA', 'FINALIZADA'])
+    .lte('hora_inicio', horaExactaStr) // Empezó antes o justo ahora
+    .gt('hora_fin', horaExactaStr)     // ¡La hora fin debe ser estrictamente mayor a este segundo!
     .maybeSingle(); 
 
   if (error) throw new Error(`Error buscando reserva actual: ${error.message}`);

@@ -26,19 +26,18 @@ const formatearFechaBackend = (fecha: Date) => {
   return new Date(fecha.getTime() - (fecha.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 };
 
-// Componente Premium para los Estados
+// Componente Premium para los Estados (CORREGIDO A 4 ESTADOS)
 const RenderEstado = ({ estado }: { estado: string }) => {
   const config: Record<string, { bg: string, text: string, dot: string, label: string }> = {
-    'PENDIENTE_APROBACION': { bg: 'bg-yellow-500/10', text: 'text-yellow-600', dot: 'bg-yellow-500', label: 'En Revisión' },
+    'PENDIENTE': { bg: 'bg-yellow-500/10', text: 'text-yellow-600', dot: 'bg-yellow-500', label: 'En Revisión' },
     'APROBADA': { bg: 'bg-green-500/10', text: 'text-green-600', dot: 'bg-green-500', label: 'Aprobada' },
     'FINALIZADA': { bg: 'bg-blue-500/10', text: 'text-blue-600', dot: 'bg-blue-500', label: 'Finalizada' },
-    'RECHAZADA': { bg: 'bg-red-500/10', text: 'text-red-600', dot: 'bg-red-500', label: 'Rechazada' },
-    'CANCELADA': { bg: 'bg-slate-500/10', text: 'text-slate-600', dot: 'bg-slate-500', label: 'Cancelada' }
+    'CANCELADA': { bg: 'bg-red-500/10', text: 'text-red-600', dot: 'bg-red-500', label: 'Cancelada' }
   };
-  const c = config[estado] || config['PENDIENTE_APROBACION'];
+  const c = config[estado] || config['PENDIENTE'];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] md:text-xs font-bold uppercase tracking-wider ${c.bg} ${c.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${c.dot} ${estado === 'PENDIENTE_APROBACION' ? 'animate-pulse' : ''}`}></span> {c.label}
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot} ${estado === 'PENDIENTE' ? 'animate-pulse' : ''}`}></span> {c.label}
     </span>
   );
 };
@@ -99,15 +98,16 @@ export default function Reservas() {
   };
 
   const manejarCambioEstado = async (reserva: any, nuevoEstado: string) => {
+    const isCancelacion = nuevoEstado === 'CANCELADA';
     const confirmacion = await Swal.fire({
-      title: 'Confirmar Acción',
+      title: isCancelacion ? '¿Cancelar Reserva?' : 'Confirmar Acción',
       html: `¿Seguro que deseas marcar esta reserva como <b>${nuevoEstado.replace('_', ' ')}</b>?`,
-      icon: 'question',
+      icon: isCancelacion ? 'warning' : 'question',
       showCancelButton: true,
-      confirmButtonColor: '#1A1A1A',
+      confirmButtonColor: isCancelacion ? '#ef4444' : '#1A1A1A',
       cancelButtonColor: '#64748b',
       confirmButtonText: 'Sí, confirmar',
-      cancelButtonText: 'Cancelar',
+      cancelButtonText: 'Cerrar',
       color: '#1A1A1A',
       customClass: { popup: 'rounded-2xl' }
     });
@@ -122,7 +122,9 @@ export default function Reservas() {
       if (!res.ok) throw new Error((await res.json()).error);
       
       toast.success(`Reserva ${nuevoEstado.replace('_', ' ').toLowerCase()} con éxito`, { id: toastId });
-      cargarReservasAdmin(); 
+      
+      if (perfil?.rol === 'ADMIN') cargarReservasAdmin(); 
+      else cargarMisReservas();
     } catch (error: any) { 
       toast.error('Error al actualizar', { description: error.message, id: toastId }); 
     }
@@ -130,20 +132,42 @@ export default function Reservas() {
 
   const procesarQR = async (textoLector: string) => {
     try {
+      // 1. Buscamos la reserva en la base de datos
       const { data, error } = await supabase
         .from('reservas')
         .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera )`)
         .eq('id', textoLector)
         .single();
 
-      if (error || !data) { setResultadoEscaneo({ valido: false, mensaje: 'Código QR no válido o reserva no encontrada en el sistema.' }); return; }
-      if (data.estado !== 'APROBADA') { setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. Estado actual: ${data.estado.replace('_', ' ')}` }); return; }
+      if (error || !data) { 
+        setResultadoEscaneo({ valido: false, mensaje: 'Código QR no válido o no encontrado.' }); 
+        return; 
+      }
+      
+      if (data.estado !== 'APROBADA') { 
+        setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. Reserva ${data.estado.toLowerCase()}.` }); 
+        return; 
+      }
 
-      setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Permitido!', datos: data as any });
-      toast.success('Pase validado correctamente');
+      // 2. ¡EL CAMBIO MÁGICO! Si el pase es válido, le decimos al backend que la pase a FINALIZADA
+      const res = await fetchAPI(`/api/reservas/${data.id}/estado`, {
+        method: 'PATCH', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ estado: 'FINALIZADA', recortarHora: false })
+      });
+
+      if (!res.ok) throw new Error('No se pudo actualizar el estado');
+
+      // 3. Recargamos la tabla oculta en el fondo para que cuando cierres el escáner ya esté actualizada
+      cargarReservasAdmin();
+
+      // 4. Mostramos el mensaje de éxito en verde
+      setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Registrado!', datos: data as any });
+      toast.success('El estudiante ha ingresado y la reserva finalizó.');
+
     } catch (err) {
-      setResultadoEscaneo({ valido: false, mensaje: 'Error de lectura del escáner.' });
-      toast.error('Ocurrió un error al procesar el código QR');
+      setResultadoEscaneo({ valido: false, mensaje: 'Error procesando el acceso.' });
+      toast.error('Ocurrió un error de red al procesar el pase.');
     }
   };
 
@@ -178,14 +202,14 @@ export default function Reservas() {
 
     if (data) {
       const vigentes = data.filter(res => {
-        if (!['PENDIENTE_APROBACION', 'APROBADA'].includes(res.estado)) return false;
+        if (!['PENDIENTE', 'APROBADA'].includes(res.estado)) return false;
         if (res.fecha_reserva > fechaLocal) return true; 
         if (res.fecha_reserva === fechaLocal && res.hora_fin > horaActualStr) return true; 
         return false;
       });
 
       const pasadas = data.filter(res => {
-        if (['RECHAZADA', 'CANCELADA', 'FINALIZADA'].includes(res.estado)) return true;
+        if (['CANCELADA', 'FINALIZADA'].includes(res.estado)) return true;
         if (res.fecha_reserva < fechaLocal) return true; 
         if (res.fecha_reserva === fechaLocal && res.hora_fin <= horaActualStr) return true; 
         return false;
@@ -199,6 +223,13 @@ export default function Reservas() {
       setReservasVigentes(vigentes);
       setReservasPasadas(pasadas);
     } 
+  };
+
+  // LOGICA PARA CANCELAR RESERVA DE USUARIO
+  const puedeCancelarReserva = (fechaReserva: string, horaInicio: string) => {
+    const ahora = new Date();
+    const fechaHoraReserva = new Date(`${fechaReserva}T${horaInicio}`);
+    return ahora < fechaHoraReserva;
   };
 
   const getFechasPermitidasObj = () => {
@@ -256,7 +287,7 @@ export default function Reservas() {
 
   const procesarPeticionReserva = async (toastId: string | number) => {
     try { 
-      const nuevaReserva = { escenario_id: escenarioSeleccionado!.id, usuario_id: session!.user.id, fecha_reserva: fechaSeleccionada, hora_inicio: bloqueSeleccionado!.hora_inicio, hora_fin: bloqueSeleccionado!.hora_fin, estado: 'PENDIENTE_APROBACION', comprobante_url: null }; 
+      const nuevaReserva = { escenario_id: escenarioSeleccionado!.id, usuario_id: session!.user.id, fecha_reserva: fechaSeleccionada, hora_inicio: bloqueSeleccionado!.hora_inicio, hora_fin: bloqueSeleccionado!.hora_fin, estado: 'PENDIENTE', comprobante_url: null }; 
       const res = await fetchAPI('/api/reservas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nuevaReserva) }); 
       if (!res.ok) throw new Error((await res.json()).error); 
       
@@ -269,7 +300,9 @@ export default function Reservas() {
 
   const leFaltanDatos = !perfil?.documento || !perfil?.codigo || !perfil?.carrera;
   const { minDateObj, maxDateObj } = getFechasPermitidasObj();
-  const ESTADOS_TABS = ['TODOS', 'PENDIENTE_APROBACION', 'APROBADA', 'RECHAZADA', 'CANCELADA', 'FINALIZADA'];
+  
+  // TABS ACTUALIZADOS
+  const ESTADOS_TABS = ['TODOS', 'PENDIENTE', 'APROBADA', 'CANCELADA', 'FINALIZADA'];
 
   if (cargandoInicial) return <div className="p-8 text-center text-slate-500 animate-pulse">Cargando...</div>;
 
@@ -367,10 +400,10 @@ export default function Reservas() {
                           </td>
                           <td className="px-6 py-4"><RenderEstado estado={res.estado} /></td>
                           <td className="px-6 py-4 text-right flex justify-end gap-2">
-                            {res.estado === 'PENDIENTE_APROBACION' && (
+                            {res.estado === 'PENDIENTE' && (
                               <>
                                 <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="p-2.5 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Aprobar"><Check size={18} /></button>
-                                <button onClick={() => manejarCambioEstado(res, 'RECHAZADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
+                                <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
                               </>
                             )}
                             {res.estado === 'APROBADA' && (
@@ -415,10 +448,10 @@ export default function Reservas() {
                       </div>
 
                       <div className="flex gap-3">
-                        {res.estado === 'PENDIENTE_APROBACION' && (
+                        {res.estado === 'PENDIENTE' && (
                           <>
                             <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="flex-1 py-3.5 bg-green-50 hover:bg-green-500 text-green-700 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><Check size={16}/> Aprobar</button>
-                            <button onClick={() => manejarCambioEstado(res, 'RECHAZADA')} className="flex-1 py-3.5 bg-red-50 hover:bg-red-500 text-red-700 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><X size={16}/> Rechazar</button>
+                            <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="flex-1 py-3.5 bg-red-50 hover:bg-red-500 text-red-700 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><X size={16}/> Rechazar</button>
                           </>
                         )}
                         {res.estado === 'APROBADA' && (
@@ -478,72 +511,72 @@ export default function Reservas() {
         )}
 
         {/* ========================================== */}
-        {/* ESCÁNER HUD (CORREGIDO)                    */}
+        {/* ESCÁNER HUD (BLANCO/CLARO PARA COMBINAR)    */}
         {/* ========================================== */}
         {vistaAdmin === 'ESCANER' && (
           <div className="max-w-md mx-auto animate-in slide-in-from-bottom-8 duration-500 mt-4 md:mt-8">
             {!resultadoEscaneo ? (
-              <div className="bg-[#1A1A1A] rounded-[2rem] p-6 md:p-8 shadow-2xl border border-slate-800 text-center relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#FFCC29] opacity-5 rounded-full blur-3xl pointer-events-none"></div>
-                <h3 className="text-white font-black text-2xl mb-2 flex items-center justify-center gap-2 relative z-10"><ScanLine className="text-[#FFCC29]"/> Escáner de Acceso</h3>
-                <p className="text-slate-400 text-sm mb-8 relative z-10">Apunta la cámara al código QR del estudiante.</p>
+              <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-xl border border-slate-200 text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#FFCC29] opacity-10 rounded-full blur-3xl pointer-events-none"></div>
+                <h3 className="text-[#1A1A1A] font-black text-2xl mb-2 flex items-center justify-center gap-2 relative z-10"><ScanLine className="text-[#FFCC29]"/> Escáner de Acceso</h3>
+                <p className="text-slate-500 text-sm mb-8 relative z-10">Apunta la cámara al código QR del estudiante.</p>
                 
-                {/* Marco del Escáner Limpio */}
-                <div className="relative rounded-2xl overflow-hidden aspect-square bg-black shadow-inner border border-white/10">
+                {/* Marco del Escáner */}
+                <div className="relative rounded-2xl overflow-hidden aspect-square bg-slate-50 shadow-inner border border-slate-200">
                    <div className="opacity-90"><Scanner onScan={(result) => procesarQR(result[0].rawValue)} onError={(error) => console.log(error)} /></div>
                 </div>
               </div>
             ) : (
-              // TARJETA DE RESULTADO CON CONTRASTE ALTO
-              <div className={`relative p-6 pt-14 mt-12 rounded-[2rem] text-center shadow-2xl animate-in zoom-in-95 border-2 ${resultadoEscaneo.valido ? 'bg-[#1A1A1A] border-green-500/30' : 'bg-[#1A1A1A] border-red-500/30'}`}>
+              // TARJETA DE RESULTADO CON CONTRASTE CLARO
+              <div className={`relative p-6 pt-14 mt-12 bg-white rounded-[2rem] text-center shadow-xl animate-in zoom-in-95 border-2 ${resultadoEscaneo.valido ? 'border-green-400/50' : 'border-red-400/50'}`}>
                 
                 {/* EL AVATAR / FOTO (Sobresaliendo por arriba) */}
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2">
                   {resultadoEscaneo.valido ? (
-                    <div className="w-24 h-24 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] shadow-[0_10px_20px_rgba(255,204,41,0.3)] border-4 border-[#1A1A1A] rotate-3">
+                    <div className="w-24 h-24 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] shadow-[0_10px_20px_rgba(255,204,41,0.3)] border-4 border-white rotate-3">
                       <div className="-rotate-3">
                         {resultadoEscaneo.datos?.usuarios?.nombre_completo.charAt(0).toUpperCase()}
                       </div>
                     </div>
                   ) : (
-                    <div className="w-24 h-24 bg-red-500 rounded-full flex items-center justify-center shadow-[0_10px_20px_rgba(239,68,68,0.4)] border-4 border-[#1A1A1A]">
+                    <div className="w-24 h-24 bg-red-500 rounded-full flex items-center justify-center shadow-[0_10px_20px_rgba(239,68,68,0.4)] border-4 border-white">
                       <AlertCircle size={40} className="text-white" />
                     </div>
                   )}
                 </div>
 
-                {/* Badge de estado (Más legible) */}
+                {/* Badge de estado */}
                 <div className="flex justify-center mb-4">
                    {resultadoEscaneo.valido ? 
-                     <span className="bg-green-500/20 text-green-400 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-1.5"><CheckCircle2 size={16}/> Acceso Permitido</span> : 
-                     <span className="bg-red-500/20 text-red-400 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-1.5"><X size={16}/> Acceso Denegado</span>
+                     <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-1.5"><CheckCircle2 size={16}/> Acceso Permitido</span> : 
+                     <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-1.5"><X size={16}/> Acceso Denegado</span>
                    }
                 </div>
 
-                <h2 className="text-xl font-black mb-6 text-white leading-tight">
+                <h2 className="text-xl font-black mb-6 text-[#1A1A1A] leading-tight">
                   {resultadoEscaneo.mensaje}
                 </h2>
                 
-                {/* Datos con Alto Contraste */}
+                {/* Datos */}
                 {resultadoEscaneo.datos && (
-                  <div className="text-left bg-white/5 p-5 rounded-2xl border border-white/10">
+                  <div className="text-left bg-slate-50 p-5 rounded-2xl border border-slate-200">
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Titular del Pase</p>
-                    <p className="font-black text-xl mb-4 text-white leading-tight">{resultadoEscaneo.datos.usuarios?.nombre_completo}</p>
+                    <p className="font-black text-xl mb-4 text-[#1A1A1A] leading-tight">{resultadoEscaneo.datos.usuarios?.nombre_completo}</p>
                     
-                    <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4">
+                    <div className="grid grid-cols-2 gap-4 border-t border-slate-200 pt-4">
                       <div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Escenario</p>
                         <p className="font-bold text-sm text-[#FFCC29]">{resultadoEscaneo.datos.escenarios?.nombre}</p>
                       </div>
                       <div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Horario</p>
-                        <p className="font-bold text-sm text-white">{resultadoEscaneo.datos.hora_inicio.slice(0,5)} - {resultadoEscaneo.datos.hora_fin.slice(0,5)}</p>
+                        <p className="font-bold text-sm text-[#1A1A1A]">{resultadoEscaneo.datos.hora_inicio.slice(0,5)} - {resultadoEscaneo.datos.hora_fin.slice(0,5)}</p>
                       </div>
                     </div>
                   </div>
                 )}
                 
-                <button onClick={() => setResultadoEscaneo(null)} className="mt-8 w-full bg-white text-[#1A1A1A] py-3.5 rounded-xl font-black hover:bg-slate-200 transition-all text-sm uppercase tracking-wide">
+                <button onClick={() => setResultadoEscaneo(null)} className="mt-8 w-full bg-[#1A1A1A] text-white py-3.5 rounded-xl font-black hover:bg-black transition-all text-sm uppercase tracking-wide">
                   Escanear otro código
                 </button>
               </div>
@@ -776,10 +809,16 @@ export default function Reservas() {
                             <span className="flex items-center gap-1.5 text-xs font-medium text-slate-300"><Clock size={14} className="text-[#FFCC29]" /> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</span>
                           </div>
                         </div>
+                        {/* LÓGICA DE CANCELACIÓN APLICADA */}
+                        {puedeCancelarReserva(res.fecha_reserva, res.hora_inicio) && (
+                          <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="text-xs bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg font-bold transition-colors">
+                            Cancelar
+                          </button>
+                        )}
                       </div>
                       
                       <div className="p-5 relative z-10 bg-white/5 flex flex-col items-center justify-center min-h-[160px]">
-                        {res.estado === 'PENDIENTE_APROBACION' ? (
+                        {res.estado === 'PENDIENTE' ? (
                           <div className="text-center">
                             <div className="w-12 h-12 bg-yellow-500/20 text-yellow-400 rounded-full flex items-center justify-center mx-auto mb-3">
                               <Clock size={24} />
@@ -810,7 +849,7 @@ export default function Reservas() {
                     {reservasPasadas.map(res => (
                       <div key={res.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-100 transition-colors">
                         <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-600' : res.estado === 'RECHAZADA' ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'}`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-600' : res.estado === 'CANCELADA' ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'}`}>
                             {res.estado === 'FINALIZADA' ? <CheckCircle2 size={20}/> : <X size={20}/>}
                           </div>
                           <div>
@@ -822,7 +861,7 @@ export default function Reservas() {
                           </div>
                         </div>
                         <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto pl-14 md:pl-0">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-700' : res.estado === 'RECHAZADA' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
+                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-700' : res.estado === 'CANCELADA' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
                             {res.estado.replace('_', ' ')}
                           </span>
                         </div>

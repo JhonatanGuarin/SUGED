@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // <-- Agregado para el atajo
+import { useNavigate } from 'react-router-dom'; 
 import { supabase } from '../../app/supabase'; 
 import { useAuth } from '../../app/AuthContext';
 import { MapPin, Users, X, Plus, Clock, Edit, Trash2, CalendarOff, Repeat, CheckCircle2, ImagePlus, ShieldAlert, Check, Ticket } from 'lucide-react';
@@ -28,7 +28,7 @@ const formatearFechaBackend = (fecha: Date) => {
 
 export default function Escenarios() {
   const { perfil, session } = useAuth();
-  const navigate = useNavigate(); // <-- Iniciamos la navegación para el atajo
+  const navigate = useNavigate(); 
 
   const [escenarios, setEscenarios] = useState<Escenario[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -62,7 +62,10 @@ export default function Escenarios() {
     const { data, error } = await supabase.from('escenarios').select('*').order('creado_en', { ascending: false });
     if (!error && data) {
       setEscenarios(data);
-      verificarDisponibilidadEnTiempoReal(data);
+      // ¡CAMBIO 1! Solo validamos disponibilidad en tiempo real si NO es externo
+      if (perfil?.rol === 'ADMIN' || perfil?.rol === 'MEMBER_UPTC') {
+        verificarDisponibilidadEnTiempoReal(data);
+      }
     }
     setCargando(false);
   };
@@ -125,6 +128,8 @@ export default function Escenarios() {
                 const dataReserva = await resReserva.json();
                 if (dataReserva.reserva) {
                   setReservasActuales(prev => ({ ...prev, [esc.id]: dataReserva.reserva }));
+                } else {
+                  setReservasActuales(prev => { const newObj = {...prev}; delete newObj[esc.id]; return newObj; });
                 }
               }
             }
@@ -158,7 +163,7 @@ export default function Escenarios() {
       const res = await fetchAPI(`/api/reservas/${reservaId}/estado`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: 'FINALIZADA' })
+        body: JSON.stringify({ estado: 'FINALIZADA', recortarHora: true }) 
       });
       if (!res.ok) throw new Error((await res.json()).error);
       
@@ -169,7 +174,10 @@ export default function Escenarios() {
     }
   };
 
-  useEffect(() => { obtenerEscenarios(); }, []);
+  // Usamos perfil en las dependencias para que recalcule si el usuario cambia
+  useEffect(() => { 
+    if (perfil !== undefined) obtenerEscenarios(); 
+  }, [perfil]);
 
   const abrirModalCrear = () => { setEscenarioEditando(null); setIsModalOpen(true); };
   const abrirModalEditar = (escenario: Escenario) => { setEscenarioEditando(escenario); setIsModalOpen(true); };
@@ -380,14 +388,17 @@ export default function Escenarios() {
               <img src={escenario.imagen_url || 'https://via.placeholder.com/400x300?text=Escenario'} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" alt={escenario.nombre} />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A]/70 to-black/20 opacity-90 transition-opacity"></div>
               
-              {/* Píldoras Superiores (Estado y Disponibilidad) */}
-              <div className="absolute top-4 left-4 z-10">
-                {disponibilidadActual[escenario.id] === 'CARGANDO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse"></span> Calculando...</span>)}
-                {disponibilidadActual[escenario.id] === 'LIBRE' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 backdrop-blur-md border border-green-500/30 text-[10px] font-bold text-green-400 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)] animate-pulse"></span> Libre Ahora</span>)}
-                {disponibilidadActual[escenario.id] === 'OCUPADO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 backdrop-blur-md border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Ocupado</span>)}
-                {disponibilidadActual[escenario.id] === 'CERRADO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-500/30 backdrop-blur-md border border-white/10 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Cerrado</span>)}
-              </div>
+              {/* ¡CAMBIO 2! Píldoras de Disponibilidad solo para Admin y Miembros */}
+              {(perfil?.rol === 'ADMIN' || perfil?.rol === 'MEMBER_UPTC') && (
+                <div className="absolute top-4 left-4 z-10">
+                  {disponibilidadActual[escenario.id] === 'CARGANDO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse"></span> Calculando...</span>)}
+                  {disponibilidadActual[escenario.id] === 'LIBRE' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 backdrop-blur-md border border-green-500/30 text-[10px] font-bold text-green-400 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)] animate-pulse"></span> Libre Ahora</span>)}
+                  {disponibilidadActual[escenario.id] === 'OCUPADO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 backdrop-blur-md border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Ocupado</span>)}
+                  {disponibilidadActual[escenario.id] === 'CERRADO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-500/30 backdrop-blur-md border border-white/10 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Cerrado</span>)}
+                </div>
+              )}
 
+              {/* Píldora de Estado (Visible para todos, incluyendo externos) */}
               <div className="absolute top-4 right-4 z-10">
                 <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest backdrop-blur-md border ${escenario.estado === 'ACTIVO' ? 'bg-white/10 text-white border-white/20' : escenario.estado === 'MANTENIMIENTO' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
                   {escenario.estado === 'ACTIVO' ? 'Habilitado' : escenario.estado}
@@ -410,8 +421,8 @@ export default function Escenarios() {
                 <p className="text-slate-300 text-xs line-clamp-2 mb-3 font-medium leading-relaxed">{escenario.descripcion}</p>
                 <div className="flex items-center gap-2 text-[#FFCC29] text-xs font-bold mb-1"><Users size={14} /> Aforo máximo: <span className="text-white">{escenario.aforo} personas</span></div>
 
-                {/* ATAJO VIP PARA ESTUDIANTES */}
-                {perfil?.rol !== 'ADMIN' && disponibilidadActual[escenario.id] === 'LIBRE' && (
+                {/* ¡CAMBIO 3! ATAJO VIP PARA ESTUDIANTES (Oculto para externos) */}
+                {perfil?.rol === 'MEMBER_UPTC' && disponibilidadActual[escenario.id] === 'LIBRE' && (
                   <div className="mt-4 pt-4 border-t border-white/10 animate-in slide-in-from-bottom-2">
                     <button 
                       onClick={() => navigate('/reservas', { state: { pestaña: 'NUEVA', escenarioPreseleccionado: escenario } })} 

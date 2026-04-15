@@ -8,6 +8,6 @@ const router = Router();
 router.post('/', verificarToken, requerirMiembroUPTC, crearNuevaReserva);
 
 //Solo usuarios logueados que sean ADMIN pueden aprobar/rechazar
-router.patch('/:id/estado', verificarToken, requerirAdmin, cambiarEstadoReserva); 
+router.patch('/:id/estado', verificarToken, cambiarEstadoReserva); 
 
 export default router;

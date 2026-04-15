@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { supabase } from '../../app/supabase';
-import { Activity, MapPin, Clock, Ticket, AlertCircle, CheckCircle2, UserCircle, ChevronRight, Calendar, Sparkles } from 'lucide-react';
+import { MapPin, Clock, Ticket, AlertCircle, CheckCircle2, UserCircle, ChevronRight, Calendar, Sparkles, QrCode, Eye, Mail } from 'lucide-react';
 
 export default function Inicio() {
   const { perfil, session } = useAuth();
@@ -33,7 +33,7 @@ export default function Inicio() {
         const { count: countPendientes } = await supabase
           .from('reservas')
           .select('*', { count: 'exact', head: true })
-          .eq('estado', 'PENDIENTE_APROBACION');
+          .eq('estado', 'PENDIENTE'); 
 
         const { count: countEscenarios } = await supabase
           .from('escenarios')
@@ -44,7 +44,7 @@ export default function Inicio() {
           .from('reservas')
           .select('*', { count: 'exact', head: true })
           .eq('fecha_reserva', fechaLocal)
-          .in('estado', ['APROBADA', 'PENDIENTE_APROBACION']);
+          .in('estado', ['APROBADA', 'PENDIENTE', 'FINALIZADA']); 
 
         setMetricasAdmin({
           pendientes: countPendientes || 0,
@@ -52,13 +52,14 @@ export default function Inicio() {
           reservasHoy: countHoy || 0
         });
 
-      } else {
+      } else if (perfil?.rol === 'MEMBER_UPTC') {
+        // Solo buscamos reservas si es un estudiante/miembro
         const { data: reservasCandidatas } = await supabase
           .from('reservas')
           .select('fecha_reserva, hora_inicio, hora_fin, escenarios(nombre), estado')
           .eq('usuario_id', session?.user.id)
           .gte('fecha_reserva', fechaLocal)
-          .in('estado', ['APROBADA', 'PENDIENTE_APROBACION'])
+          .in('estado', ['APROBADA', 'PENDIENTE']) 
           .order('fecha_reserva', { ascending: true })
           .order('hora_inicio', { ascending: true });
           
@@ -75,6 +76,10 @@ export default function Inicio() {
           setMisReservasFuturas(0);
           setProximaReserva(null);
         }
+      } else {
+        // Es un usuario externo, no buscamos nada
+        setMisReservasFuturas(0);
+        setProximaReserva(null);
       }
     } catch (error) {
       console.error("Error cargando inicio:", error);
@@ -94,7 +99,6 @@ export default function Inicio() {
   }
 
   return (
-    // LA SOLUCIÓN ESTÁ AQUÍ: px-4 py-6 md:p-0 le da el oxígeno arriba y a los lados en móvil
     <div className="px-4 py-6 md:p-0 space-y-4 md:space-y-6">
       
       {/* ========================================== */}
@@ -123,7 +127,9 @@ export default function Inicio() {
             </div>
             <div className="pr-2">
               <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Tu Rol</p>
-              <p className="text-white font-bold">{perfil?.rol === 'ADMIN' ? 'Administrador' : 'Estudiante / Miembro'}</p>
+              <p className="text-white font-bold">
+                {perfil?.rol === 'ADMIN' ? 'Administrador' : perfil?.rol === 'MEMBER_UPTC' ? 'Estudiante / Miembro' : 'Usuario Externo'}
+              </p>
             </div>
           </div>
         </div>
@@ -190,13 +196,12 @@ export default function Inicio() {
       )}
 
       {/* ========================================== */}
-      {/* VISTA USUARIO (TICKET VIP) */}
+      {/* VISTA ESTUDIANTE / MIEMBRO (TICKET VIP) */}
       {/* ========================================== */}
-      {perfil?.rol !== 'ADMIN' && (
+      {perfil?.rol === 'MEMBER_UPTC' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 animate-in slide-in-from-bottom-4">
           
           <div className="md:col-span-2 bg-gradient-to-br from-[#1A1A1A] to-[#2d2d2d] rounded-xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg border border-white/10 flex flex-col justify-between min-h-[220px]">
-            {/* Decoración Ticket: Vertical en PC, Horizontal en Móvil */}
             <div className="hidden md:block absolute top-0 right-[25%] w-px h-full bg-white/10 border-dashed border-l border-white/20"></div>
             <div className="hidden md:block absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full opacity-10"></div>
             <div className="hidden md:block absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full opacity-10"></div>
@@ -227,9 +232,19 @@ export default function Inicio() {
             </div>
 
             <div className="relative z-10 pt-4 md:pt-0 mt-auto md:absolute md:bottom-8 md:right-8">
-              <button onClick={() => navigate('/reservas')} className="w-full md:w-auto bg-[#FFCC29] text-[#1A1A1A] px-6 py-3.5 md:py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-[#e6b825] transition-transform md:hover:scale-105 shadow-md text-sm md:text-base">
-                <Ticket size={18} /> Agendar Ahora
-              </button>
+              {!proximaReserva ? (
+                <button onClick={() => navigate('/reservas', { state: { pestaña: 'NUEVA' } })} className="w-full md:w-auto bg-[#FFCC29] text-[#1A1A1A] px-6 py-3.5 md:py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-[#e6b825] transition-transform md:hover:scale-105 shadow-md text-sm md:text-base">
+                  <Ticket size={18} /> Agendar Ahora
+                </button>
+              ) : (
+                <button onClick={() => navigate('/reservas', { state: { pestaña: 'HISTORIAL' } })} className="w-full md:w-auto bg-white text-[#1A1A1A] px-6 py-3.5 md:py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-slate-100 transition-transform md:hover:scale-105 shadow-md text-sm md:text-base">
+                  {proximaReserva.estado === 'APROBADA' ? (
+                    <><QrCode size={18} /> Ver Pase QR</>
+                  ) : (
+                    <><Eye size={18} /> Ver Estado</>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -252,7 +267,45 @@ export default function Inicio() {
               </div>
             </button>
           </div>
+        </div>
+      )}
 
+      {/* ========================================== */}
+      {/* VISTA EXTERNOS (Catálogo Informativo) */}
+      {/* ========================================== */}
+      {perfil?.rol !== 'ADMIN' && perfil?.rol !== 'MEMBER_UPTC' && (
+        <div className="animate-in slide-in-from-bottom-4">
+          <div className="bg-gradient-to-br from-[#1A1A1A] to-[#2d2d2d] rounded-xl p-8 md:p-12 text-white relative overflow-hidden shadow-lg border border-white/10">
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#FFCC29] rounded-full opacity-5 blur-3xl pointer-events-none"></div>
+
+            <div className="relative z-10 flex flex-col items-center text-center max-w-2xl mx-auto">
+              <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center text-[#FFCC29] mb-6 border border-white/10 backdrop-blur-sm">
+                <MapPin size={32} />
+              </div>
+              
+              <h2 className="text-2xl md:text-3xl font-black text-white mb-4">
+                Información para Usuarios Externos
+              </h2>
+              
+              <p className="text-slate-300 text-sm md:text-base leading-relaxed mb-8">
+                Actualmente, las reservas automatizadas a través de la plataforma están habilitadas únicamente para la comunidad universitaria de la UPTC. Si deseas solicitar el préstamo o alquiler de nuestros escenarios deportivos, por favor comunícate directamente con la administración.
+              </p>
+
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 md:p-6 w-full max-w-md backdrop-blur-sm mx-auto">
+                <div className="flex items-center justify-center gap-2 mb-2 text-slate-400">
+                  <Mail size={16} />
+                  <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest">Correo de Contacto</p>
+                </div>
+                {/* ¡Aquí está el ajuste responsivo: text-lg, sm:text-xl y break-all! */}
+                <a href="mailto:deportes.reservas@uptc.edu.co" className="text-lg sm:text-xl md:text-2xl font-black text-[#FFCC29] hover:text-[#e6b825] transition-colors block break-all px-2">
+                  deportes.reservas@uptc.edu.co
+                </a>
+                <p className="text-xs text-slate-400 mt-4 leading-relaxed">
+                  Envíanos tu solicitud y te indicaremos los pasos a seguir para formalizar el proceso de uso.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

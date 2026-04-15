@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../app/supabase';
-import { MapPin, Calendar, ShieldCheck, Info, X, Database, LayoutTemplate, Server, WifiOff, ScanLine } from 'lucide-react';
+import { MapPin, Calendar, Info, X, Database, LayoutTemplate, Server, WifiOff, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Login() {
