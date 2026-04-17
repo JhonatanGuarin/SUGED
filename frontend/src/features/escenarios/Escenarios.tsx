@@ -176,6 +176,7 @@ export default function Escenarios() {
 
   // Usamos perfil en las dependencias para que recalcule si el usuario cambia
   useEffect(() => { 
+    document.title = "Catálogo de Escenarios | SUGED";
     if (perfil !== undefined) obtenerEscenarios(); 
   }, [perfil]);
 

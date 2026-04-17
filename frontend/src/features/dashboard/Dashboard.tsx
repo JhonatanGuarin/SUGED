@@ -17,6 +17,7 @@ export default function Inicio() {
   const [proximaReserva, setProximaReserva] = useState<any>(null);
 
   useEffect(() => {
+    document.title = "Inicio | SUGED";
     if (session && perfil) {
       cargarDatosInicio();
     }

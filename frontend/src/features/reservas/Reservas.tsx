@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../app/supabase';
 import { useAuth } from '../../app/AuthContext';
-import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Ticket, History, ScanLine, AlertCircle, Search, Eye, IdCard, Sparkles, Users, Edit2, ShieldAlert } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Ticket, History, ScanLine, AlertCircle, Search, Eye, Sparkles, Users, Edit2, ShieldAlert } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { toast } from 'sonner';
@@ -73,6 +73,11 @@ export default function Reservas() {
   const [procesandoReserva, setProcesandoReserva] = useState(false);
   const [datosPerfilFaltantes, setDatosPerfilFaltantes] = useState({ documento: '', codigo: '', carrera: '' });
   const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+
+  
+  useEffect(() => {
+    document.title = "Gestión de Reservas | SUGED";
+  }, []); 
 
   useEffect(() => {
     if (location.state && location.state.pestaña) { 
