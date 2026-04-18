@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../../core/supabase.js';
 
 export const crearReservaBase = async (datosReserva: any) => {
   // 1. Anti Double-Booking
+  // ¡CORRECCIÓN!: Ya no tomamos en cuenta las FINALIZADAS para permitir agendar en ese espacio liberado
   const { data: colisiones } = await supabaseAdmin
     .from('reservas')
     .select('id')
@@ -9,7 +10,7 @@ export const crearReservaBase = async (datosReserva: any) => {
     .eq('fecha_reserva', datosReserva.fecha_reserva)
     .lt('hora_inicio', datosReserva.hora_fin)
     .gt('hora_fin', datosReserva.hora_inicio)
-    .in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
+    .in('estado', ['PENDIENTE', 'APROBADA']);
 
   if (colisiones && colisiones.length > 0) {
     throw new Error('Lo sentimos, este horario acaba de ser reservado por alguien más.');
@@ -59,8 +60,7 @@ export const actualizarEstadoReserva = async (id: string, estado: string, usuari
     const ahora = new Date();
     const colombiaTime = new Date(ahora.getTime() - (5 * 3600 * 1000));
     
-    // ¡LA SOLUCIÓN! Usamos substring para extraer "HH:mm:ss" directamente. 
-    // Es 100% seguro y TypeScript no se queja.
+    // Usamos substring para extraer "HH:mm:ss" directamente. 
     const horaActual = colombiaTime.toISOString().substring(11, 19);
     
     datosAActualizar.hora_fin = horaActual;
