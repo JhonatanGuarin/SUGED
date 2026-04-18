@@ -14,7 +14,6 @@ export default function Layout() {
     navigate('/login');
   };
 
-  // Definimos las rutas dinámicamente según el rol
   const navLinks = [
     { to: "/escenarios", icon: <MapPin size={20} />, label: "Escenarios" },
     ...(perfil?.rol === 'ADMIN' ? [{ to: "/reservas", icon: <Calendar size={20} />, label: "Todas las Reservas" }] : []),
@@ -22,60 +21,37 @@ export default function Layout() {
   ];
 
   return (
-    // 1. EL BLINDAJE: fixed inset-0 ancla la app a las 4 esquinas. overflow-hidden mata el scroll global.
-    <div className="fixed inset-0 bg-slate-50 flex flex-col md:flex-row font-sans overflow-hidden w-full">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col md:flex-row font-sans">
       
-      {/* HEADER MÓVIL (Solo visible en celulares) */}
-      {/* Añadimos pt-[max(1rem,env(safe-area-inset-top))] para protegerlo del "Notch" o la cámara del iPhone */}
-      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] z-30 shadow-md shrink-0">
+      {/* HEADER MÓVIL */}
+      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 sticky top-0 z-30 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#FFCC29] rounded-md flex items-center justify-center font-black text-[#1A1A1A]">
-            S
-          </div>
+          <div className="w-8 h-8 bg-[#FFCC29] rounded-md flex items-center justify-center font-black text-[#1A1A1A]">S</div>
           <span className="font-black text-lg tracking-wider text-white">SUGED</span>
         </div>
-        <button 
-          onClick={() => setIsMobileMenuOpen(true)} 
-          className="text-[#FFCC29] hover:text-white transition-colors p-1"
-        >
+        <button onClick={() => setIsMobileMenuOpen(true)} className="text-[#FFCC29] hover:text-white transition-colors p-1">
           <Menu size={28} />
         </button>
       </div>
 
-      {/* SIDEBAR (Menú lateral) */}
+      {/* SIDEBAR */}
       <aside className={`
-        fixed md:relative inset-y-0 left-0 z-50 w-72 h-full bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        fixed md:sticky md:top-0 md:h-[100dvh] inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        {/* Cabecera del Sidebar para móviles (Botón Cerrar) */}
-        <div className="md:hidden flex justify-end p-4 border-b border-slate-800/80 pt-[max(1rem,env(safe-area-inset-top))]">
-          <button 
-            onClick={() => setIsMobileMenuOpen(false)} 
-            className="text-slate-400 hover:text-white transition-colors p-1"
-          >
-            <X size={28} />
-          </button>
+        <div className="md:hidden flex justify-end p-4 border-b border-slate-800/80">
+          <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1"><X size={28} /></button>
         </div>
 
-        {/* Logo Institucional (Solo Escritorio) */}
         <div className="hidden md:flex items-center gap-4 p-6 border-b border-slate-800/80">
-           <div className="w-12 h-12 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-2xl shadow-lg shadow-[#FFCC29]/20">
-            S
-          </div>
+           <div className="w-12 h-12 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-2xl shadow-lg shadow-[#FFCC29]/20">S</div>
           <div>
             <span className="font-black text-2xl tracking-wider text-white block leading-tight">SUGED</span>
             <span className="text-[10px] text-[#FFCC29] uppercase tracking-widest font-bold">UPTC Deportes</span>
           </div>
         </div>
 
-        {/* Perfil del Usuario (Clickeable hacia el Dashboard) */}
-        <button 
-          onClick={() => {
-            navigate('/'); 
-            setIsMobileMenuOpen(false); 
-          }}
-          className="w-full text-left p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20 hover:bg-black/40 transition-colors cursor-pointer group shrink-0"
-        >
+        <button onClick={() => { navigate('/'); setIsMobileMenuOpen(false); }} className="w-full text-left p-6 border-b border-slate-800/80 flex items-center gap-4 bg-black/20 hover:bg-black/40 transition-colors cursor-pointer group shrink-0">
           <div className="w-12 h-12 rounded-full bg-slate-800 border-2 border-[#FFCC29] group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0 shadow-sm">
             {session?.user?.user_metadata?.avatar_url ? (
               <img src={session.user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -84,66 +60,30 @@ export default function Layout() {
             )}
           </div>
           <div className="overflow-hidden">
-            <p className="text-sm font-bold text-white truncate group-hover:text-[#FFCC29] transition-colors">
-              {session?.user?.user_metadata?.full_name || 'Usuario'}
-            </p>
+            <p className="text-sm font-bold text-white truncate group-hover:text-[#FFCC29] transition-colors">{session?.user?.user_metadata?.full_name || 'Usuario'}</p>
             <span className="inline-block mt-1 px-2 py-0.5 bg-[#FFCC29]/10 text-[#FFCC29] text-[10px] uppercase font-bold tracking-wider rounded-md border border-[#FFCC29]/20">
-              {perfil?.rol === 'ADMIN' ? 'Administrador' : 
-              perfil?.rol === 'MEMBER_UPTC' ? 'Miembro UPTC' : 'Usuario Externo'}
+              {perfil?.rol === 'ADMIN' ? 'Administrador' : perfil?.rol === 'MEMBER_UPTC' ? 'Miembro UPTC' : 'Usuario Externo'}
             </span>
           </div>
         </button>
 
-        {/* Navegación Principal */}
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto scrollbar-hide">
           {navLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              onClick={() => setIsMobileMenuOpen(false)} 
-              className={({ isActive }) => `
-                flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold transition-all duration-200 group
-                ${isActive 
-                  ? 'bg-[#FFCC29] text-[#1A1A1A] shadow-lg shadow-[#FFCC29]/10' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                }
-              `}
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={`${isActive ? 'text-[#1A1A1A]' : 'text-slate-500 group-hover:text-[#FFCC29] transition-colors'}`}>
-                    {link.icon}
-                  </span>
-                  {link.label}
-                </>
-              )}
+            <NavLink key={link.to} to={link.to} onClick={() => setIsMobileMenuOpen(false)} className={({ isActive }) => `flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold transition-all duration-200 group ${isActive ? 'bg-[#FFCC29] text-[#1A1A1A] shadow-lg shadow-[#FFCC29]/10' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+              {({ isActive }) => (<><span className={`${isActive ? 'text-[#1A1A1A]' : 'text-slate-500 group-hover:text-[#FFCC29] transition-colors'}`}>{link.icon}</span>{link.label}</>)}
             </NavLink>
           ))}
         </nav>
 
-        {/* Botón de Cerrar Sesión (Con el padding dinámico para el área segura de iOS) */}
         <div className="px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-slate-800/80 shrink-0">
-          <button 
-            onClick={manejarCerrarSesion}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors"
-          >
-            <LogOut size={20} />
-            Cerrar Sesión
-          </button>
+          <button onClick={manejarCerrarSesion} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors"><LogOut size={20} /> Cerrar Sesión</button>
         </div>
       </aside>
 
-      {/* Fondo oscuro cuando el menú móvil está abierto */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
+      {isMobileMenuOpen && (<div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)}/>)}
 
-      {/* 2. ÁREA DE CONTENIDO: Esta es la ÚNICA zona que ahora tiene permiso de hacer scroll */}
-      <main className="flex-1 overflow-y-auto bg-slate-50 relative pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-[1600px] mx-auto p-4 md:p-6 min-h-full">
+      <main className="flex-1 p-0 md:p-6 overflow-y-auto w-full mx-auto bg-slate-50">
+        <div className="max-w-[1600px] mx-auto h-full">
           <Outlet />
         </div>
       </main>

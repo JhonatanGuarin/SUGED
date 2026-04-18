@@ -40,6 +40,15 @@ const calcularEstadoVisual = (reserva: any) => {
   return 'APROBADA';
 };
 
+// FUNCIÓN PARA MEJORAR LA CALIDAD DEL AVATAR DE GOOGLE
+const obtenerAvatarHD = (url?: string) => {
+  if (!url) return '';
+  if (url.includes('googleusercontent.com') && url.includes('=s')) {
+    return url.replace(/=s\d+-c/, '=s400-c');
+  }
+  return url;
+};
+
 // Componente Premium para los Estados
 const RenderEstado = ({ estado }: { estado: string }) => {
   const config: Record<string, { bg: string, text: string, dot: string, label: string }> = {
@@ -166,22 +175,18 @@ export default function Reservas() {
         return; 
       }
 
-      // --- LA MAGIA DEL TIEMPO (VERSIÓN ROBUSTA) ---
+      // LA MAGIA DEL TIEMPO (VERSIÓN ROBUSTA)
       const ahora = new Date();
       
-      // Creamos objetos de tiempo combinando la fecha de la reserva y las horas correspondientes
       const reservaInicio = new Date(`${data.fecha_reserva}T${data.hora_inicio}`);
       const reservaFin = new Date(`${data.fecha_reserva}T${data.hora_fin}`);
       
-      // Si la reserva empieza un día y termina al siguiente (ej. 23:00 a 02:00)
       if (reservaFin < reservaInicio) {
         reservaFin.setDate(reservaFin.getDate() + 1);
       }
 
-      // Creamos la "Ventana de Entrada" restándole 15 minutos matemáticamente al inicio
       const ventanaInicio = new Date(reservaInicio.getTime() - 15 * 60000);
 
-      // 1. Verificamos si intentan entrar mucho antes de su bloque
       if (ahora < ventanaInicio) {
           const fechaActualStr = new Date(ahora.getTime() - (ahora.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
           const diaTexto = data.fecha_reserva === fechaActualStr ? 'hoy' : `el ${data.fecha_reserva}`;
@@ -190,13 +195,11 @@ export default function Reservas() {
           return;
       }
 
-      // 2. Verificamos si intentan entrar cuando la reserva ya pasó
       if (ahora > reservaFin) {
           setResultadoEscaneo({ valido: false, mensaje: `La reserva ya expiró a las ${data.hora_fin.slice(0,5)}.`, datos: data as any }); 
           return;
       }
 
-      // 3. SI PASA TODAS LAS PRUEBAS: Mostrar pantalla verde
       setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Permitido!', datos: data as any });
       toast.success('Validación exitosa. El estudiante puede ingresar.');
 
@@ -211,7 +214,6 @@ export default function Reservas() {
     const coincideEscenario = res.escenarios?.nombre.toLowerCase().includes(busqueda.toLowerCase()) || false;
     const coincideTexto = coincideNombre || coincideEscenario;
     
-    // Filtramos usando el estado visual maquillado
     const estadoVisual = calcularEstadoVisual(res);
     const coincideEstado = filtroEstado === 'TODOS' || estadoVisual === filtroEstado;
     const coincideFecha = filtroFecha === '' || res.fecha_reserva === filtroFecha;
@@ -350,7 +352,6 @@ export default function Reservas() {
     return (
       <div className="bg-white p-4 md:p-8 rounded-xl shadow-sm border border-slate-200 min-h-[80vh]">
         
-        {/* ENCABEZADO */}
         <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <h1 className="text-3xl font-black text-[#1A1A1A] tracking-tight">Centro de Control</h1>
@@ -366,7 +367,6 @@ export default function Reservas() {
         {vistaAdmin === 'TABLA' && (
           <div className="animate-in fade-in duration-500">
             
-            {/* COMANDO CENTRAL */}
             <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-8 space-y-4 shadow-sm">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1 relative group">
@@ -388,7 +388,6 @@ export default function Reservas() {
               </div>
             </div>
 
-            {/* ÁREA DE DATOS */}
             {reservasFiltradas.length === 0 ? (
               <div className="py-20 text-center text-slate-500 bg-slate-50 rounded-3xl border border-dashed border-slate-300 flex flex-col items-center justify-center">
                 <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-200 mb-4">
@@ -400,7 +399,6 @@ export default function Reservas() {
               </div>
             ) : (
               <>
-                {/* 💻 DATA GRID PREMIUM (Escritorio) */}
                 <div className="hidden md:block bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-50/80 border-b border-slate-100 text-xs uppercase tracking-widest text-slate-500 font-bold">
@@ -420,17 +418,16 @@ export default function Reservas() {
                           <td className="px-6 py-4">
                             <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
                               
-                              {/* AVATAR IMPLEMENTADO EN ESCRITORIO */}
-                              <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform overflow-hidden border border-slate-200">
+                              <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform overflow-hidden border border-slate-200 shrink-0">
                                 {res.usuarios?.avatar_url ? (
-                                  <img src={res.usuarios.avatar_url} alt="Perfil" className="w-full h-full object-cover" />
+                                  <img src={obtenerAvatarHD(res.usuarios.avatar_url)} alt="Perfil" className="w-full h-full object-cover" />
                                 ) : (
                                   res.usuarios?.nombre_completo.charAt(0).toUpperCase()
                                 )}
                               </div>
 
                               <div>
-                                <div className="font-bold text-[#1A1A1A] group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                                <div className="font-bold text-[#1A1A1A] group-hover:text-blue-600 transition-colors flex items-center gap-1.5 line-clamp-1">
                                   {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                                 <div className="text-[11px] text-slate-500 font-medium tracking-wide uppercase">
@@ -452,7 +449,6 @@ export default function Reservas() {
                                 <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
                               </>
                             )}
-                            {/* Solo mostrar Cancelar si la reserva sigue APROBADA (no pasada) */}
                             {estadoVisual === 'APROBADA' && (
                               <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-slate-50 text-slate-500 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Cancelar Reserva"><X size={18} /></button>
                             )}
@@ -463,27 +459,25 @@ export default function Reservas() {
                   </table>
                 </div>
 
-                {/* 📱 TARJETAS MÓVILES PREMIUM */}
                 <div className="md:hidden flex flex-col gap-4">
                   {reservasFiltradas.map((res) => {
                     const estadoVisual = calcularEstadoVisual(res);
                     return (
                     <div key={res.id} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col relative overflow-hidden">
                       <div className="flex justify-between items-start mb-4">
-                        <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
+                        <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3 w-full">
                           
-                          {/* AVATAR IMPLEMENTADO EN MÓVIL */}
-                          <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm overflow-hidden border border-slate-200">
+                          <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm overflow-hidden border border-slate-200 shrink-0">
                             {res.usuarios?.avatar_url ? (
-                              <img src={res.usuarios.avatar_url} alt="Perfil" className="w-full h-full object-cover" />
+                              <img src={obtenerAvatarHD(res.usuarios.avatar_url)} alt="Perfil" className="w-full h-full object-cover" />
                             ) : (
                               res.usuarios?.nombre_completo.charAt(0).toUpperCase()
                             )}
                           </div>
 
-                          <div className="flex flex-col">
-                            <span className="font-bold text-[#1A1A1A] flex items-center gap-1.5 text-[15px]">
-                              {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-[#FFCC29]" />
+                          <div className="flex flex-col flex-1">
+                            <span className="font-bold text-[#1A1A1A] flex items-center gap-1.5 text-[15px] line-clamp-1">
+                              {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-[#FFCC29] shrink-0" />
                             </span>
                             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
                                {res.usuarios?.rol === 'MEMBER_UPTC' ? 'Estudiante' : res.usuarios?.rol === 'ADMIN' ? 'Administrador' : res.usuarios?.rol}
@@ -522,9 +516,6 @@ export default function Reservas() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* CARNET DIGITAL (APPLE WALLET STYLE)        */}
-        {/* ========================================== */}
         {usuarioCarnet && (
           <div className="fixed inset-0 bg-[#1A1A1A]/80 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-300">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 relative border border-slate-200 flex flex-col">
@@ -533,11 +524,10 @@ export default function Reservas() {
                 <div className="absolute top-4 right-4"><button onClick={() => setUsuarioCarnet(null)} className="text-slate-400 hover:text-white transition-colors bg-white/10 rounded-full p-1.5 backdrop-blur-sm"><X size={20}/></button></div>
                 <div className="absolute top-4 left-4"><span className="text-[#FFCC29] font-black tracking-widest uppercase text-[10px] flex items-center gap-1"><ShieldAlert size={14}/> Credencial UPTC</span></div>
                 
-                {/* AVATAR IMPLEMENTADO EN EL CARNET DIGITAL */}
                 <div className="absolute -bottom-12 w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-xl border-4 border-white rotate-3 overflow-hidden">
                   <div className="-rotate-3 w-full h-full flex items-center justify-center bg-[#FFCC29] text-[#1A1A1A] font-black text-4xl">
                     {usuarioCarnet.avatar_url ? (
-                      <img src={usuarioCarnet.avatar_url} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
+                      <img src={obtenerAvatarHD(usuarioCarnet.avatar_url)} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
                     ) : (
                       usuarioCarnet.nombre_completo.charAt(0).toUpperCase()
                     )}
@@ -569,9 +559,6 @@ export default function Reservas() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* ESCÁNER HUD */}
-        {/* ========================================== */}
         {vistaAdmin === 'ESCANER' && (
           <div className="max-w-md mx-auto animate-in slide-in-from-bottom-8 duration-500 mt-4 md:mt-8">
             {!resultadoEscaneo ? (
@@ -587,13 +574,12 @@ export default function Reservas() {
             ) : (
               <div className={`relative p-6 pt-14 mt-12 bg-white rounded-[2rem] text-center shadow-xl animate-in zoom-in-95 border-2 ${resultadoEscaneo.valido ? 'border-green-400/50' : 'border-red-400/50'}`}>
                 
-                {/* AVATAR IMPLEMENTADO EN EL RESULTADO DEL ESCÁNER */}
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2">
                   {resultadoEscaneo.valido ? (
                     <div className="w-24 h-24 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] shadow-[0_10px_20px_rgba(255,204,41,0.3)] border-4 border-white rotate-3 overflow-hidden">
                       <div className="-rotate-3 w-full h-full flex items-center justify-center">
                         {resultadoEscaneo.datos?.usuarios?.avatar_url ? (
-                          <img src={resultadoEscaneo.datos.usuarios.avatar_url} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
+                          <img src={obtenerAvatarHD(resultadoEscaneo.datos.usuarios.avatar_url)} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
                         ) : (
                           resultadoEscaneo.datos?.usuarios?.nombre_completo.charAt(0).toUpperCase()
                         )}
@@ -646,9 +632,6 @@ export default function Reservas() {
     );
   }
 
-  // ==========================================
-  // VISTA USUARIO (Miembros UPTC) 
-  // ==========================================
   return (
     <div className="bg-white p-4 md:p-8 rounded-xl shadow-sm border border-slate-200 min-h-[80vh] flex flex-col">
       <div className="mb-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-4">
@@ -811,9 +794,6 @@ export default function Reservas() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* VISTA HISTORIAL RENOVADA */}
-        {/* ========================================== */}
         {vistaActiva === 'HISTORIAL' && (
           <div className="animate-in fade-in space-y-10">
             
@@ -883,7 +863,6 @@ export default function Reservas() {
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
                   <div className="grid grid-cols-1 divide-y divide-slate-200">
                     {reservasPasadas.map((res) => {
-                      // TRUCO VISUAL APLICADO EN EL HISTORIAL
                       const estadoVisual = calcularEstadoVisual(res);
                       return (
                       <div key={res.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-100 transition-colors">
