@@ -22,7 +22,7 @@ export default function Layout() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col md:flex-row font-sans">
       
       {/* HEADER MÓVIL (Solo visible en celulares) */}
       <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 sticky top-0 z-30 shadow-md">
@@ -41,9 +41,8 @@ export default function Layout() {
       </div>
 
       {/* SIDEBAR (Menú lateral) */}
-      {/* 👇 AQUÍ ESTÁ LA MAGIA: md:sticky md:top-0 md:h-screen */}
       <aside className={`
-        fixed md:sticky md:top-0 md:h-screen inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        fixed md:sticky md:top-0 md:h-[100dvh] inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Cabecera del Sidebar para móviles (Botón Cerrar) */}
@@ -120,8 +119,8 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Botón de Cerrar Sesión */}
-        <div className="p-4 border-t border-slate-800/80 shrink-0">
+        {/* Botón de Cerrar Sesión (Con el padding dinámico para el área segura de iOS) */}
+        <div className="px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-slate-800/80 shrink-0">
           <button 
             onClick={manejarCerrarSesion}
             className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors"

@@ -16,7 +16,7 @@ registerLocale('es', es);
 
 interface Escenario { id: string; nombre: string; imagen_url: string; aforo: number; }
 interface BloqueDisponible { hora_inicio: string; hora_fin: string; etiqueta: string; }
-interface UsuarioInfo { nombre_completo: string; rol: string; documento?: string; codigo?: string; carrera?: string; }
+interface UsuarioInfo { nombre_completo: string; rol: string; documento?: string; codigo?: string; carrera?: string; avatar_url?: string; }
 interface ReservaAdmin {
   id: string; fecha_reserva: string; hora_inicio: string; hora_fin: string; estado: string; 
   escenarios: { nombre: string }; usuarios: UsuarioInfo;
@@ -26,7 +26,21 @@ const formatearFechaBackend = (fecha: Date) => {
   return new Date(fecha.getTime() - (fecha.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 };
 
-// Componente Premium para los Estados (CORREGIDO A 4 ESTADOS)
+// TRUCO VISUAL: Calcula si una reserva APROBADA ya pasó en el tiempo
+const calcularEstadoVisual = (reserva: any) => {
+  if (reserva.estado !== 'APROBADA') return reserva.estado;
+  
+  const hoy = new Date();
+  const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+  const horaActualStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
+
+  if (reserva.fecha_reserva < fechaLocal) return 'FINALIZADA';
+  if (reserva.fecha_reserva === fechaLocal && reserva.hora_fin < horaActualStr) return 'FINALIZADA';
+  
+  return 'APROBADA';
+};
+
+// Componente Premium para los Estados
 const RenderEstado = ({ estado }: { estado: string }) => {
   const config: Record<string, { bg: string, text: string, dot: string, label: string }> = {
     'PENDIENTE': { bg: 'bg-yellow-500/10', text: 'text-yellow-600', dot: 'bg-yellow-500', label: 'En Revisión' },
@@ -74,7 +88,6 @@ export default function Reservas() {
   const [datosPerfilFaltantes, setDatosPerfilFaltantes] = useState({ documento: '', codigo: '', carrera: '' });
   const [guardandoPerfil, setGuardandoPerfil] = useState(false);
 
-  
   useEffect(() => {
     document.title = "Gestión de Reservas | SUGED";
   }, []); 
@@ -96,7 +109,7 @@ export default function Reservas() {
     setCargandoInicial(true);
     const { data } = await supabase
       .from('reservas')
-      .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera )`)
+      .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url )`)
       .order('fecha_reserva', { ascending: false });
     if (data) setReservasAdmin(data as any[]);
     setCargandoInicial(false);
@@ -137,10 +150,9 @@ export default function Reservas() {
 
   const procesarQR = async (textoLector: string) => {
     try {
-      // 1. Buscamos la reserva en la base de datos
       const { data, error } = await supabase
         .from('reservas')
-        .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera )`)
+        .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url )`)
         .eq('id', textoLector)
         .single();
 
@@ -150,25 +162,36 @@ export default function Reservas() {
       }
       
       if (data.estado !== 'APROBADA') { 
-        setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. Reserva ${data.estado.toLowerCase()}.` }); 
+        setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. Reserva ${data.estado.toLowerCase()}.`, datos: data as any }); 
         return; 
       }
 
-      // 2. ¡EL CAMBIO MÁGICO! Si el pase es válido, le decimos al backend que la pase a FINALIZADA
-      const res = await fetchAPI(`/api/reservas/${data.id}/estado`, {
-        method: 'PATCH', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ estado: 'FINALIZADA', recortarHora: false })
-      });
+      const hoy = new Date();
+      const fechaLocalActual = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+      
+      if (data.fecha_reserva !== fechaLocalActual) {
+         setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. La reserva es para el ${data.fecha_reserva}, no para hoy.`, datos: data as any }); 
+         return;
+      }
 
-      if (!res.ok) throw new Error('No se pudo actualizar el estado');
+      const horaActualStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
+      
+      const fechaInicioGracia = new Date(`${data.fecha_reserva}T${data.hora_inicio}`);
+      fechaInicioGracia.setMinutes(fechaInicioGracia.getMinutes() - 15);
+      const horaInicioConGracia = `${fechaInicioGracia.getHours().toString().padStart(2, '0')}:${fechaInicioGracia.getMinutes().toString().padStart(2, '0')}:00`;
 
-      // 3. Recargamos la tabla oculta en el fondo para que cuando cierres el escáner ya esté actualizada
-      cargarReservasAdmin();
+      if (horaActualStr < horaInicioConGracia) {
+          setResultadoEscaneo({ valido: false, mensaje: `Aún es muy temprano. Su reserva empieza a las ${data.hora_inicio.slice(0,5)}.`, datos: data as any }); 
+          return;
+      }
 
-      // 4. Mostramos el mensaje de éxito en verde
-      setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Registrado!', datos: data as any });
-      toast.success('El estudiante ha ingresado y la reserva finalizó.');
+      if (horaActualStr > data.hora_fin) {
+          setResultadoEscaneo({ valido: false, mensaje: `La reserva ya expiró a las ${data.hora_fin.slice(0,5)}.`, datos: data as any }); 
+          return;
+      }
+
+      setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Permitido!', datos: data as any });
+      toast.success('Validación exitosa. El estudiante puede ingresar.');
 
     } catch (err) {
       setResultadoEscaneo({ valido: false, mensaje: 'Error procesando el acceso.' });
@@ -180,8 +203,12 @@ export default function Reservas() {
     const coincideNombre = res.usuarios?.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) || false;
     const coincideEscenario = res.escenarios?.nombre.toLowerCase().includes(busqueda.toLowerCase()) || false;
     const coincideTexto = coincideNombre || coincideEscenario;
-    const coincideEstado = filtroEstado === 'TODOS' || res.estado === filtroEstado;
+    
+    // Filtramos usando el estado visual maquillado
+    const estadoVisual = calcularEstadoVisual(res);
+    const coincideEstado = filtroEstado === 'TODOS' || estadoVisual === filtroEstado;
     const coincideFecha = filtroFecha === '' || res.fecha_reserva === filtroFecha;
+    
     return coincideTexto && coincideEstado && coincideFecha;
   });
 
@@ -230,7 +257,6 @@ export default function Reservas() {
     } 
   };
 
-  // LOGICA PARA CANCELAR RESERVA DE USUARIO
   const puedeCancelarReserva = (fechaReserva: string, horaInicio: string) => {
     const ahora = new Date();
     const fechaHoraReserva = new Date(`${fechaReserva}T${horaInicio}`);
@@ -306,7 +332,6 @@ export default function Reservas() {
   const leFaltanDatos = !perfil?.documento || !perfil?.codigo || !perfil?.carrera;
   const { minDateObj, maxDateObj } = getFechasPermitidasObj();
   
-  // TABS ACTUALIZADOS
   const ESTADOS_TABS = ['TODOS', 'PENDIENTE', 'APROBADA', 'CANCELADA', 'FINALIZADA'];
 
   if (cargandoInicial) return <div className="p-8 text-center text-slate-500 animate-pulse">Cargando...</div>;
@@ -334,7 +359,7 @@ export default function Reservas() {
         {vistaAdmin === 'TABLA' && (
           <div className="animate-in fade-in duration-500">
             
-            {/* COMANDO CENTRAL (Filtros Unificados) */}
+            {/* COMANDO CENTRAL */}
             <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-8 space-y-4 shadow-sm">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1 relative group">
@@ -381,13 +406,22 @@ export default function Reservas() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {reservasFiltradas.map((res) => (
+                      {reservasFiltradas.map((res) => {
+                        const estadoVisual = calcularEstadoVisual(res);
+                        return (
                         <tr key={res.id} className="hover:bg-slate-50 transition-colors group cursor-default">
                           <td className="px-6 py-4">
                             <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform">
-                                {res.usuarios?.nombre_completo.charAt(0).toUpperCase()}
+                              
+                              {/* AVATAR IMPLEMENTADO EN ESCRITORIO */}
+                              <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform overflow-hidden border border-slate-200">
+                                {res.usuarios?.avatar_url ? (
+                                  <img src={res.usuarios.avatar_url} alt="Perfil" className="w-full h-full object-cover" />
+                                ) : (
+                                  res.usuarios?.nombre_completo.charAt(0).toUpperCase()
+                                )}
                               </div>
+
                               <div>
                                 <div className="font-bold text-[#1A1A1A] group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
                                   {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -403,33 +437,43 @@ export default function Reservas() {
                             <div className="text-sm font-bold text-[#1A1A1A]">{res.fecha_reserva}</div>
                             <div className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5"><Clock size={12}/> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</div>
                           </td>
-                          <td className="px-6 py-4"><RenderEstado estado={res.estado} /></td>
+                          <td className="px-6 py-4"><RenderEstado estado={estadoVisual} /></td>
                           <td className="px-6 py-4 text-right flex justify-end gap-2">
-                            {res.estado === 'PENDIENTE' && (
+                            {estadoVisual === 'PENDIENTE' && (
                               <>
                                 <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="p-2.5 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Aprobar"><Check size={18} /></button>
                                 <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
                               </>
                             )}
-                            {res.estado === 'APROBADA' && (
+                            {/* Solo mostrar Cancelar si la reserva sigue APROBADA (no pasada) */}
+                            {estadoVisual === 'APROBADA' && (
                               <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-slate-50 text-slate-500 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Cancelar Reserva"><X size={18} /></button>
                             )}
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
 
                 {/* 📱 TARJETAS MÓVILES PREMIUM */}
                 <div className="md:hidden flex flex-col gap-4">
-                  {reservasFiltradas.map((res) => (
+                  {reservasFiltradas.map((res) => {
+                    const estadoVisual = calcularEstadoVisual(res);
+                    return (
                     <div key={res.id} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col relative overflow-hidden">
                       <div className="flex justify-between items-start mb-4">
                         <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm">
-                            {res.usuarios?.nombre_completo.charAt(0).toUpperCase()}
+                          
+                          {/* AVATAR IMPLEMENTADO EN MÓVIL */}
+                          <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm overflow-hidden border border-slate-200">
+                            {res.usuarios?.avatar_url ? (
+                              <img src={res.usuarios.avatar_url} alt="Perfil" className="w-full h-full object-cover" />
+                            ) : (
+                              res.usuarios?.nombre_completo.charAt(0).toUpperCase()
+                            )}
                           </div>
+
                           <div className="flex flex-col">
                             <span className="font-bold text-[#1A1A1A] flex items-center gap-1.5 text-[15px]">
                               {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-[#FFCC29]" />
@@ -444,7 +488,7 @@ export default function Reservas() {
                       <div className="bg-slate-50 rounded-2xl p-4 text-sm border border-slate-100 mb-4">
                         <div className="flex justify-between items-start mb-2">
                           <div className="font-black text-[#1A1A1A]">{res.escenarios?.nombre}</div>
-                          <RenderEstado estado={res.estado} />
+                          <RenderEstado estado={estadoVisual} />
                         </div>
                         <div className="flex flex-col gap-2 mt-3 text-xs font-medium text-slate-600">
                           <div className="flex items-center gap-2"><CalendarIcon size={14} className="text-[#FFCC29]"/> {res.fecha_reserva}</div>
@@ -453,18 +497,18 @@ export default function Reservas() {
                       </div>
 
                       <div className="flex gap-3">
-                        {res.estado === 'PENDIENTE' && (
+                        {estadoVisual === 'PENDIENTE' && (
                           <>
                             <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="flex-1 py-3.5 bg-green-50 hover:bg-green-500 text-green-700 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><Check size={16}/> Aprobar</button>
                             <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="flex-1 py-3.5 bg-red-50 hover:bg-red-500 text-red-700 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><X size={16}/> Rechazar</button>
                           </>
                         )}
-                        {res.estado === 'APROBADA' && (
+                        {estadoVisual === 'APROBADA' && (
                           <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="w-full py-3.5 bg-slate-100 hover:bg-red-500 text-slate-600 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"><X size={16}/> Cancelar</button>
                         )}
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </>
             )}
@@ -478,15 +522,18 @@ export default function Reservas() {
           <div className="fixed inset-0 bg-[#1A1A1A]/80 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-300">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 relative border border-slate-200 flex flex-col">
               
-              {/* Header Oscuro */}
               <div className="bg-gradient-to-br from-[#1A1A1A] to-[#2d2d2d] h-32 relative flex justify-center border-b-4 border-[#FFCC29]">
                 <div className="absolute top-4 right-4"><button onClick={() => setUsuarioCarnet(null)} className="text-slate-400 hover:text-white transition-colors bg-white/10 rounded-full p-1.5 backdrop-blur-sm"><X size={20}/></button></div>
                 <div className="absolute top-4 left-4"><span className="text-[#FFCC29] font-black tracking-widest uppercase text-[10px] flex items-center gap-1"><ShieldAlert size={14}/> Credencial UPTC</span></div>
                 
-                {/* Avatar Flotante */}
-                <div className="absolute -bottom-12 w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-xl border-4 border-white rotate-3">
-                  <div className="w-full h-full bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] -rotate-3">
-                    {usuarioCarnet.nombre_completo.charAt(0).toUpperCase()}
+                {/* AVATAR IMPLEMENTADO EN EL CARNET DIGITAL */}
+                <div className="absolute -bottom-12 w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-xl border-4 border-white rotate-3 overflow-hidden">
+                  <div className="-rotate-3 w-full h-full flex items-center justify-center bg-[#FFCC29] text-[#1A1A1A] font-black text-4xl">
+                    {usuarioCarnet.avatar_url ? (
+                      <img src={usuarioCarnet.avatar_url} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
+                    ) : (
+                      usuarioCarnet.nombre_completo.charAt(0).toUpperCase()
+                    )}
                   </div>
                 </div>
               </div>
@@ -516,7 +563,7 @@ export default function Reservas() {
         )}
 
         {/* ========================================== */}
-        {/* ESCÁNER HUD (BLANCO/CLARO PARA COMBINAR)    */}
+        {/* ESCÁNER HUD */}
         {/* ========================================== */}
         {vistaAdmin === 'ESCANER' && (
           <div className="max-w-md mx-auto animate-in slide-in-from-bottom-8 duration-500 mt-4 md:mt-8">
@@ -526,21 +573,23 @@ export default function Reservas() {
                 <h3 className="text-[#1A1A1A] font-black text-2xl mb-2 flex items-center justify-center gap-2 relative z-10"><ScanLine className="text-[#FFCC29]"/> Escáner de Acceso</h3>
                 <p className="text-slate-500 text-sm mb-8 relative z-10">Apunta la cámara al código QR del estudiante.</p>
                 
-                {/* Marco del Escáner */}
                 <div className="relative rounded-2xl overflow-hidden aspect-square bg-slate-50 shadow-inner border border-slate-200">
                    <div className="opacity-90"><Scanner onScan={(result) => procesarQR(result[0].rawValue)} onError={(error) => console.log(error)} /></div>
                 </div>
               </div>
             ) : (
-              // TARJETA DE RESULTADO CON CONTRASTE CLARO
               <div className={`relative p-6 pt-14 mt-12 bg-white rounded-[2rem] text-center shadow-xl animate-in zoom-in-95 border-2 ${resultadoEscaneo.valido ? 'border-green-400/50' : 'border-red-400/50'}`}>
                 
-                {/* EL AVATAR / FOTO (Sobresaliendo por arriba) */}
+                {/* AVATAR IMPLEMENTADO EN EL RESULTADO DEL ESCÁNER */}
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2">
                   {resultadoEscaneo.valido ? (
-                    <div className="w-24 h-24 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] shadow-[0_10px_20px_rgba(255,204,41,0.3)] border-4 border-white rotate-3">
-                      <div className="-rotate-3">
-                        {resultadoEscaneo.datos?.usuarios?.nombre_completo.charAt(0).toUpperCase()}
+                    <div className="w-24 h-24 bg-[#FFCC29] rounded-2xl flex items-center justify-center font-black text-4xl text-[#1A1A1A] shadow-[0_10px_20px_rgba(255,204,41,0.3)] border-4 border-white rotate-3 overflow-hidden">
+                      <div className="-rotate-3 w-full h-full flex items-center justify-center">
+                        {resultadoEscaneo.datos?.usuarios?.avatar_url ? (
+                          <img src={resultadoEscaneo.datos.usuarios.avatar_url} alt="Perfil" className="w-[120%] h-[120%] object-cover scale-110" />
+                        ) : (
+                          resultadoEscaneo.datos?.usuarios?.nombre_completo.charAt(0).toUpperCase()
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -550,7 +599,6 @@ export default function Reservas() {
                   )}
                 </div>
 
-                {/* Badge de estado */}
                 <div className="flex justify-center mb-4">
                    {resultadoEscaneo.valido ? 
                      <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-1.5"><CheckCircle2 size={16}/> Acceso Permitido</span> : 
@@ -562,7 +610,6 @@ export default function Reservas() {
                   {resultadoEscaneo.mensaje}
                 </h2>
                 
-                {/* Datos */}
                 {resultadoEscaneo.datos && (
                   <div className="text-left bg-slate-50 p-5 rounded-2xl border border-slate-200">
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Titular del Pase</p>
@@ -607,22 +654,12 @@ export default function Reservas() {
       
       <div className="flex-1">
         
-        {/* ========================================== */}
-        {/* WIZARD DE RESERVA PREMIUM (NUEVA)          */}
-        {/* ========================================== */}
         {vistaActiva === 'NUEVA' && (
           <div className="animate-in fade-in duration-500">
-            
-            {/* BARRA DE PROGRESO (STEPPER) */}
             <div className="max-w-2xl mx-auto mb-12 md:mb-16 mt-4">
               <div className="flex items-center justify-between relative px-2 md:px-8">
-                {/* Línea de fondo */}
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1.5 bg-slate-100 rounded-full z-0"></div>
-                {/* Línea de progreso amarilla animada */}
-                <div 
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 bg-[#FFCC29] rounded-full z-0 transition-all duration-700 ease-out" 
-                  style={{ width: paso === 1 ? '0%' : paso === 2 ? '50%' : '100%' }}
-                ></div>
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 bg-[#FFCC29] rounded-full z-0 transition-all duration-700 ease-out" style={{ width: paso === 1 ? '0%' : paso === 2 ? '50%' : '100%' }}></div>
                 
                 {[
                   { num: 1, icon: MapPin, label: 'Escenario' },
@@ -643,15 +680,10 @@ export default function Reservas() {
               </div>
             </div>
 
-            {/* PASO 1: CATÁLOGO INMERSIVO */}
             {paso === 1 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-8 duration-500">
                 {escenarios.map(esc => (
-                  <button 
-                    key={esc.id} 
-                    onClick={() => { setEscenarioSeleccionado(esc); setPaso(2); }} 
-                    className="relative text-left rounded-3xl overflow-hidden aspect-[4/3] group shadow-sm hover:shadow-xl transition-all border border-slate-200/50"
-                  >
+                  <button key={esc.id} onClick={() => { setEscenarioSeleccionado(esc); setPaso(2); }} className="relative text-left rounded-3xl overflow-hidden aspect-[4/3] group shadow-sm hover:shadow-xl transition-all border border-slate-200/50">
                     <img src={esc.imagen_url || 'https://via.placeholder.com/400x300?text=Escenario'} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" alt={esc.nombre} />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A]/50 to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
                     
@@ -671,11 +703,8 @@ export default function Reservas() {
               </div>
             )}
 
-            {/* PASO 2: FECHA */}
             {paso === 2 && escenarioSeleccionado && (
               <div className="max-w-2xl mx-auto animate-in slide-in-from-right-8 duration-500">
-                
-                {/* Resumen Superior */}
                 <div className="flex items-center gap-4 p-4 mb-8 bg-slate-50 rounded-2xl border border-slate-200">
                   <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0"><img src={escenarioSeleccionado.imagen_url} className="w-full h-full object-cover"/></div>
                   <div className="flex-1">
@@ -704,7 +733,6 @@ export default function Reservas() {
               </div>
             )}
 
-            {/* PASO 3: HORA Y CHECKOUT */}
             {paso === 3 && fechaSeleccionada && escenarioSeleccionado && (
               <div className="animate-in slide-in-from-right-8 duration-500">
                 
@@ -723,7 +751,6 @@ export default function Reservas() {
                   </div>
                 )}
                 
-                {/* EL TICKET BORRADOR (CHECKOUT) */}
                 {bloqueSeleccionado && (
                   <div className="mt-12 animate-in slide-in-from-bottom-8 duration-500 max-w-3xl mx-auto">
                     <div className="bg-[#1A1A1A] rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-2xl border border-[#FFCC29]/20">
@@ -734,7 +761,6 @@ export default function Reservas() {
 
                       <div className="relative z-10 flex flex-col md:flex-row gap-8">
                         
-                        {/* Datos de la Reserva */}
                         <div className="flex-1 md:pr-6">
                           <h3 className="text-xs md:text-sm font-bold text-[#FFCC29] uppercase tracking-widest mb-2 flex items-center gap-2"><Sparkles size={16}/> Resumen de Reserva</h3>
                           <p className="text-3xl md:text-4xl font-black text-white leading-tight mb-8">{escenarioSeleccionado.nombre}</p>
@@ -751,7 +777,6 @@ export default function Reservas() {
                           </div>
                         </div>
 
-                        {/* Área de Acción / Formulario Faltante */}
                         <div className="md:w-[35%] flex flex-col justify-center pt-6 md:pt-0">
                           {leFaltanDatos ? (
                             <form onSubmit={manejarGuardarPerfilYReservar} className="space-y-4 animate-in fade-in">
@@ -780,7 +805,7 @@ export default function Reservas() {
         )}
 
         {/* ========================================== */}
-        {/* VISTA HISTORIAL RENOVADA (PASES Y PASADAS) */}
+        {/* VISTA HISTORIAL RENOVADA */}
         {/* ========================================== */}
         {vistaActiva === 'HISTORIAL' && (
           <div className="animate-in fade-in space-y-10">
@@ -814,7 +839,6 @@ export default function Reservas() {
                             <span className="flex items-center gap-1.5 text-xs font-medium text-slate-300"><Clock size={14} className="text-[#FFCC29]" /> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</span>
                           </div>
                         </div>
-                        {/* LÓGICA DE CANCELACIÓN APLICADA */}
                         {puedeCancelarReserva(res.fecha_reserva, res.hora_inicio) && (
                           <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="text-xs bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg font-bold transition-colors">
                             Cancelar
@@ -851,11 +875,14 @@ export default function Reservas() {
                 </h2>
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
                   <div className="grid grid-cols-1 divide-y divide-slate-200">
-                    {reservasPasadas.map(res => (
+                    {reservasPasadas.map((res) => {
+                      // TRUCO VISUAL APLICADO EN EL HISTORIAL
+                      const estadoVisual = calcularEstadoVisual(res);
+                      return (
                       <div key={res.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-100 transition-colors">
                         <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-600' : res.estado === 'CANCELADA' ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'}`}>
-                            {res.estado === 'FINALIZADA' ? <CheckCircle2 size={20}/> : <X size={20}/>}
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${estadoVisual === 'FINALIZADA' ? 'bg-blue-100 text-blue-600' : estadoVisual === 'CANCELADA' ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'}`}>
+                            {estadoVisual === 'FINALIZADA' ? <CheckCircle2 size={20}/> : <X size={20}/>}
                           </div>
                           <div>
                             <h3 className="font-bold text-[#1A1A1A] text-sm">{res.escenarios?.nombre}</h3>
@@ -866,12 +893,12 @@ export default function Reservas() {
                           </div>
                         </div>
                         <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto pl-14 md:pl-0">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider ${res.estado === 'FINALIZADA' ? 'bg-blue-100 text-blue-700' : res.estado === 'CANCELADA' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
-                            {res.estado.replace('_', ' ')}
+                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider ${estadoVisual === 'FINALIZADA' ? 'bg-blue-100 text-blue-700' : estadoVisual === 'CANCELADA' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
+                            {estadoVisual.replace('_', ' ')}
                           </span>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               </div>
