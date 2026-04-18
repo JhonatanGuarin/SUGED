@@ -79,7 +79,9 @@ export default function Escenarios() {
     const hoy = new Date();
     const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const horaActualInt = hoy.getHours();
-    const horaActualStr = `${horaActualInt.toString().padStart(2, '0')}:00:00`;
+    
+    // NUEVO: Calculamos la hora exacta actual (con minutos) para saber en qué punto del bloque estamos
+    const horaExactaStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
     
     let diaSemana = hoy.getDay();
     diaSemana = diaSemana === 0 ? 7 : diaSemana; 
@@ -115,7 +117,11 @@ export default function Escenarios() {
         
         if (res.ok) {
           const data = await res.json();
-          const estaLibre = data.libres.some((bloque: any) => bloque.hora_inicio === horaActualStr);
+          
+          // LA CORRECCIÓN: Buscamos si la hora exacta cae DENTRO del límite de un bloque libre
+          const estaLibre = data.libres.some((bloque: any) => 
+            horaExactaStr >= bloque.hora_inicio && horaExactaStr < bloque.hora_fin
+          );
           
           if (estaLibre) {
             setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'LIBRE' }));
