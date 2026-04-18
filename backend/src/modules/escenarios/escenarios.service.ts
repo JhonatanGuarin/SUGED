@@ -18,7 +18,13 @@ export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: stri
   const { data: bloqueosPuntuales } = await supabaseAdmin.from('bloqueos_escenarios').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('fecha', fecha);
   const { data: bloqueosFijos } = await supabaseAdmin.from('bloqueos_recurrentes').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('dia_semana', diaSemana);
 
-  const { data: reservas } = await supabaseAdmin.from('reservas').select('hora_inicio, hora_fin').eq('escenario_id', escenarioId).eq('fecha_reserva', fecha).in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
+  // ¡CORRECCIÓN!: Ya no tomamos en cuenta las FINALIZADAS
+  const { data: reservas } = await supabaseAdmin
+    .from('reservas')
+    .select('hora_inicio, hora_fin')
+    .eq('escenario_id', escenarioId)
+    .eq('fecha_reserva', fecha)
+    .in('estado', ['PENDIENTE', 'APROBADA']); 
 
   const ocupados = [
     ...(bloqueosPuntuales || []), 
@@ -99,13 +105,13 @@ export const actualizarEscenarioBase = async (id: string, datos: any) => {
 export const crearHorario = async (escenarioId: string, datosHorario: any) => {
   const hoy = new Date().toISOString().split('T')[0];
 
-  // ¡CORREGIDO AQUÍ!
+  // ¡CORRECCIÓN!: Ya no tomamos en cuenta las FINALIZADAS
   const { data: colisiones } = await supabaseAdmin
     .from('reservas')
     .select('id, fecha_reserva, hora_inicio, hora_fin')
     .eq('escenario_id', escenarioId)
     .gte('fecha_reserva', hoy)
-    .in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
+    .in('estado', ['PENDIENTE', 'APROBADA']); 
 
   const reservasAfectadas = (colisiones || []).filter((reserva) => {
     const fechaObj = new Date(reserva.fecha_reserva);
@@ -138,7 +144,7 @@ export const crearHorario = async (escenarioId: string, datosHorario: any) => {
 };
 
 export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
-  // ¡CORREGIDO AQUÍ!
+  // ¡CORRECCIÓN!: Ya no tomamos en cuenta las FINALIZADAS
   const { data: colisiones } = await supabaseAdmin
     .from('reservas')
     .select('id')
@@ -146,7 +152,7 @@ export const crearBloqueo = async (escenarioId: string, datosBloqueo: any) => {
     .eq('fecha_reserva', datosBloqueo.fecha)
     .lt('hora_inicio', datosBloqueo.hora_fin) 
     .gt('hora_fin', datosBloqueo.hora_inicio) 
-    .in('estado', ['PENDIENTE', 'APROBADA', 'FINALIZADA']);
+    .in('estado', ['PENDIENTE', 'APROBADA']); 
 
   if (colisiones && colisiones.length > 0) {
     throw new Error(`Acción rechazada: Hay ${colisiones.length} reserva(s) activa(s) o en revisión en ese rango de horas. Por favor, cancela esas reservas antes de bloquear el escenario.`);
@@ -205,7 +211,6 @@ export const obtenerReservaActual = async (escenarioId: string) => {
   const colombiaTime = new Date(now.getTime() - (5 * 3600 * 1000));
   const fechaLocal = colombiaTime.toISOString().split('T')[0];
   
-  // ¡CORRECCIÓN 1! Usamos la hora exacta con minutos y segundos (ej. 15:48:11)
   const horaExactaStr = colombiaTime.toISOString().substring(11, 19); 
 
   const { data, error } = await supabaseAdmin
@@ -218,8 +223,8 @@ export const obtenerReservaActual = async (escenarioId: string) => {
     `)
     .eq('escenario_id', escenarioId)
     .eq('fecha_reserva', fechaLocal)
-    // ¡CORRECCIÓN 2! Incluimos FINALIZADA para que siga mostrando el panel rojo tras escanear
-    .in('estado', ['APROBADA', 'FINALIZADA'])
+    // ¡CORRECCIÓN!: Ya no buscamos FINALIZADAS, solo APROBADAS activas
+    .eq('estado', 'APROBADA')
     .lte('hora_inicio', horaExactaStr) // Empezó antes o justo ahora
     .gt('hora_fin', horaExactaStr)     // ¡La hora fin debe ser estrictamente mayor a este segundo!
     .maybeSingle(); 
