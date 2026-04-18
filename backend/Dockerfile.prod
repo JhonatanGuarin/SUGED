@@ -11,3 +11,4 @@ COPY . .
 
 # Usamos tsx para arrancar directamente tu archivo original. ¡Cero errores de rutas!
 CMD ["npx", "tsx", "src/index.ts"]
+
