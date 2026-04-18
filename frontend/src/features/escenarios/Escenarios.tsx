@@ -62,7 +62,6 @@ export default function Escenarios() {
     const { data, error } = await supabase.from('escenarios').select('*').order('creado_en', { ascending: false });
     if (!error && data) {
       setEscenarios(data);
-      // ¡CAMBIO 1! Solo validamos disponibilidad en tiempo real si NO es externo
       if (perfil?.rol === 'ADMIN' || perfil?.rol === 'MEMBER_UPTC') {
         verificarDisponibilidadEnTiempoReal(data);
       }
@@ -80,7 +79,7 @@ export default function Escenarios() {
     const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const horaActualInt = hoy.getHours();
     
-    // NUEVO: Calculamos la hora exacta actual (con minutos) para saber en qué punto del bloque estamos
+    // CORRECCIÓN MATEMÁTICA: Calculamos la hora exacta actual (con minutos) para saber en qué punto del bloque estamos
     const horaExactaStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
     
     let diaSemana = hoy.getDay();
@@ -113,12 +112,14 @@ export default function Escenarios() {
           return;
         }
 
-        const res = await fetchAPI(`/api/escenarios/${esc.id}/disponibilidad?fecha=${fechaLocal}`);
+        // EL TRUCO DEL CACHÉ: Inyectamos un timestamp único para obligar al navegador a buscar datos frescos
+        const timestamp = hoy.getTime();
+        const res = await fetchAPI(`/api/escenarios/${esc.id}/disponibilidad?fecha=${fechaLocal}&_t=${timestamp}`);
         
         if (res.ok) {
           const data = await res.json();
           
-          // LA CORRECCIÓN: Buscamos si la hora exacta cae DENTRO del límite de un bloque libre
+          // CORRECCIÓN MATEMÁTICA: Verificamos si la hora exacta cae DENTRO del límite de un bloque libre
           const estaLibre = data.libres.some((bloque: any) => 
             horaExactaStr >= bloque.hora_inicio && horaExactaStr < bloque.hora_fin
           );
@@ -129,7 +130,8 @@ export default function Escenarios() {
             setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'OCUPADO' }));
             
             if (perfil?.rol === 'ADMIN') {
-              const resReserva = await fetchAPI(`/api/escenarios/${esc.id}/reserva-actual`);
+              // Aplicamos también el truco del caché a la consulta de reserva actual
+              const resReserva = await fetchAPI(`/api/escenarios/${esc.id}/reserva-actual?_t=${timestamp}`);
               if (resReserva.ok) {
                 const dataReserva = await resReserva.json();
                 if (dataReserva.reserva) {
@@ -180,7 +182,6 @@ export default function Escenarios() {
     }
   };
 
-  // Usamos perfil en las dependencias para que recalcule si el usuario cambia
   useEffect(() => { 
     document.title = "Catálogo de Escenarios | SUGED";
     if (perfil !== undefined) obtenerEscenarios(); 
@@ -350,9 +351,6 @@ export default function Escenarios() {
   return (
     <div className="px-4 py-6 md:p-0 space-y-6 min-h-[80vh]">
       
-      {/* ========================================== */}
-      {/* ENCABEZADO PREMIUM (DASHBOARD STYLE)       */}
-      {/* ========================================== */}
       <div className="bg-[#1A1A1A] rounded-xl p-6 md:p-8 relative overflow-hidden shadow-md border border-[#FFCC29]/10">
         <div className="absolute -top-24 -right-24 w-80 h-80 bg-[#FFCC29] rounded-full opacity-10 blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-white rounded-full opacity-5 blur-3xl pointer-events-none"></div>
@@ -375,9 +373,6 @@ export default function Escenarios() {
         </div>
       </div>
 
-      {/* ========================================== */}
-      {/* CATÁLOGO INMERSIVO (GRILLA DE TARJETAS)    */}
-      {/* ========================================== */}
       {cargando ? (
         <div className="flex justify-center items-center h-40 text-slate-500 font-medium animate-pulse">Cargando espacios...</div>
       ) : escenarios.length === 0 ? (
@@ -391,11 +386,9 @@ export default function Escenarios() {
           {escenarios.map((escenario) => (
             <div key={escenario.id} className="relative bg-[#1A1A1A] rounded-2xl overflow-hidden shadow-lg group border border-slate-200/50 flex flex-col h-[360px] md:h-[400px]">
               
-              {/* Imagen de Fondo y Degradado */}
               <img src={escenario.imagen_url || 'https://via.placeholder.com/400x300?text=Escenario'} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" alt={escenario.nombre} />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A]/70 to-black/20 opacity-90 transition-opacity"></div>
               
-              {/* ¡CAMBIO 2! Píldoras de Disponibilidad solo para Admin y Miembros */}
               {(perfil?.rol === 'ADMIN' || perfil?.rol === 'MEMBER_UPTC') && (
                 <div className="absolute top-4 left-4 z-10">
                   {disponibilidadActual[escenario.id] === 'CARGANDO' && (<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse"></span> Calculando...</span>)}
@@ -405,17 +398,14 @@ export default function Escenarios() {
                 </div>
               )}
 
-              {/* Píldora de Estado (Visible para todos, incluyendo externos) */}
               <div className="absolute top-4 right-4 z-10">
                 <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest backdrop-blur-md border ${escenario.estado === 'ACTIVO' ? 'bg-white/10 text-white border-white/20' : escenario.estado === 'MANTENIMIENTO' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
                   {escenario.estado === 'ACTIVO' ? 'Habilitado' : escenario.estado}
                 </span>
               </div>
               
-              {/* Contenido Principal (Abajo) */}
               <div className="relative z-10 mt-auto p-5 flex flex-col">
                 
-                {/* Alerta de Reserva Actual (Para Admin) */}
                 {perfil?.rol === 'ADMIN' && disponibilidadActual[escenario.id] === 'OCUPADO' && reservasActuales[escenario.id] && (
                   <div className="mb-4 bg-red-500/20 backdrop-blur-md border border-red-500/30 p-3 rounded-xl animate-in slide-in-from-bottom-2">
                     <p className="text-[10px] text-red-300 font-bold uppercase tracking-widest mb-1 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> En Uso Por:</p>
@@ -428,7 +418,6 @@ export default function Escenarios() {
                 <p className="text-slate-300 text-xs line-clamp-2 mb-3 font-medium leading-relaxed">{escenario.descripcion}</p>
                 <div className="flex items-center gap-2 text-[#FFCC29] text-xs font-bold mb-1"><Users size={14} /> Aforo máximo: <span className="text-white">{escenario.aforo} personas</span></div>
 
-                {/* ¡CAMBIO 3! ATAJO VIP PARA ESTUDIANTES (Oculto para externos) */}
                 {perfil?.rol === 'MEMBER_UPTC' && disponibilidadActual[escenario.id] === 'LIBRE' && (
                   <div className="mt-4 pt-4 border-t border-white/10 animate-in slide-in-from-bottom-2">
                     <button 
@@ -440,7 +429,6 @@ export default function Escenarios() {
                   </div>
                 )}
 
-                {/* Barra de Comandos del Admin */}
                 {perfil?.rol === 'ADMIN' && (
                   <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
                     <div className="flex gap-1.5">
@@ -459,9 +447,6 @@ export default function Escenarios() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL: CREAR / EDITAR (DISEÑO CLEAN)       */}
-      {/* ========================================== */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-[#1A1A1A]/80 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
@@ -497,7 +482,6 @@ export default function Escenarios() {
                 </div>
               </div>
 
-              {/* Zona de Subida de Imagen Premium */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Fotografía del Escenario</label>
                 <div className="relative border-2 border-dashed border-slate-300 rounded-2xl p-6 bg-white hover:bg-slate-50 transition-colors flex flex-col items-center justify-center text-center group cursor-pointer">
@@ -517,9 +501,6 @@ export default function Escenarios() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL: HORARIO BASE (DISEÑO CLEAN)         */}
-      {/* ========================================== */}
       {isHorarioModalOpen && escenarioSeleccionado && (
         <div className="fixed inset-0 bg-[#1A1A1A]/80 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm flex flex-col overflow-hidden animate-in zoom-in-95">
@@ -554,14 +535,10 @@ export default function Escenarios() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL: BLOQUEOS (HUD SECURITY STYLE)       */}
-      {/* ========================================== */}
       {isBloqueoModalOpen && escenarioSeleccionado && (
         <div className="fixed inset-0 bg-[#1A1A1A]/90 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
             
-            {/* Header Seguridad */}
             <div className="flex justify-between items-center p-6 bg-gradient-to-r from-red-600 to-red-800 shrink-0">
               <div>
                 <h2 className="text-xl font-black text-white flex items-center gap-2"><ShieldAlert size={24}/> Gestión de Restricciones</h2>
@@ -570,7 +547,6 @@ export default function Escenarios() {
               <button onClick={() => setIsBloqueoModalOpen(false)} className="text-white/60 hover:text-white bg-black/20 p-2 rounded-full transition-colors"><X size={20} /></button>
             </div>
 
-            {/* Segmented Control */}
             <div className="flex bg-slate-100 p-1.5 shrink-0 border-b border-slate-200">
               <button onClick={() => setTipoBloqueo('PUNTUAL')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${tipoBloqueo === 'PUNTUAL' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><CalendarOff size={16}/> Cierre Excepcional (1 Día)</button>
               <button onClick={() => setTipoBloqueo('FIJO')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${tipoBloqueo === 'FIJO' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-slate-500 hover:text-[#1A1A1A]'}`}><Repeat size={16}/> Entrenamiento Fijo (Semanal)</button>
@@ -578,7 +554,6 @@ export default function Escenarios() {
 
             <div className="flex flex-col md:flex-row overflow-y-auto flex-1 bg-slate-50/50">
               
-              {/* FORMULARIO IZQUIERDO */}
               <form onSubmit={manejarGuardarBloqueo} className="p-6 border-b md:border-b-0 md:border-r border-slate-200 bg-white md:w-1/2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">{tipoBloqueo === 'PUNTUAL' ? 'Añadir Nuevo Cierre' : 'Configurar Horario Fijo'}</h3>
                 
@@ -633,7 +608,6 @@ export default function Escenarios() {
                 </div>
               </form>
 
-              {/* LISTA DERECHA (Notificaciones) */}
               <div className="p-6 bg-slate-50 flex-1 md:w-1/2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">
                   {tipoBloqueo === 'PUNTUAL' ? `Bloqueos del ${formatearFechaBackend(fechaBloqueo) || 'día'}` : 'Entrenamientos Activos'}
