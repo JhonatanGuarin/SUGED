@@ -166,30 +166,37 @@ export default function Reservas() {
         return; 
       }
 
-      const hoy = new Date();
-      const fechaLocalActual = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+      // --- LA MAGIA DEL TIEMPO (VERSIÓN ROBUSTA) ---
+      const ahora = new Date();
       
-      if (data.fecha_reserva !== fechaLocalActual) {
-         setResultadoEscaneo({ valido: false, mensaje: `Acceso Denegado. La reserva es para el ${data.fecha_reserva}, no para hoy.`, datos: data as any }); 
-         return;
+      // Creamos objetos de tiempo combinando la fecha de la reserva y las horas correspondientes
+      const reservaInicio = new Date(`${data.fecha_reserva}T${data.hora_inicio}`);
+      const reservaFin = new Date(`${data.fecha_reserva}T${data.hora_fin}`);
+      
+      // Si la reserva empieza un día y termina al siguiente (ej. 23:00 a 02:00)
+      if (reservaFin < reservaInicio) {
+        reservaFin.setDate(reservaFin.getDate() + 1);
       }
 
-      const horaActualStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
-      
-      const fechaInicioGracia = new Date(`${data.fecha_reserva}T${data.hora_inicio}`);
-      fechaInicioGracia.setMinutes(fechaInicioGracia.getMinutes() - 15);
-      const horaInicioConGracia = `${fechaInicioGracia.getHours().toString().padStart(2, '0')}:${fechaInicioGracia.getMinutes().toString().padStart(2, '0')}:00`;
+      // Creamos la "Ventana de Entrada" restándole 15 minutos matemáticamente al inicio
+      const ventanaInicio = new Date(reservaInicio.getTime() - 15 * 60000);
 
-      if (horaActualStr < horaInicioConGracia) {
-          setResultadoEscaneo({ valido: false, mensaje: `Aún es muy temprano. Su reserva empieza a las ${data.hora_inicio.slice(0,5)}.`, datos: data as any }); 
+      // 1. Verificamos si intentan entrar mucho antes de su bloque
+      if (ahora < ventanaInicio) {
+          const fechaActualStr = new Date(ahora.getTime() - (ahora.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+          const diaTexto = data.fecha_reserva === fechaActualStr ? 'hoy' : `el ${data.fecha_reserva}`;
+          
+          setResultadoEscaneo({ valido: false, mensaje: `Aún es muy temprano. Su reserva es ${diaTexto} a las ${data.hora_inicio.slice(0,5)}.`, datos: data as any }); 
           return;
       }
 
-      if (horaActualStr > data.hora_fin) {
+      // 2. Verificamos si intentan entrar cuando la reserva ya pasó
+      if (ahora > reservaFin) {
           setResultadoEscaneo({ valido: false, mensaje: `La reserva ya expiró a las ${data.hora_fin.slice(0,5)}.`, datos: data as any }); 
           return;
       }
 
+      // 3. SI PASA TODAS LAS PRUEBAS: Mostrar pantalla verde
       setResultadoEscaneo({ valido: true, mensaje: '¡Acceso Permitido!', datos: data as any });
       toast.success('Validación exitosa. El estudiante puede ingresar.');
 

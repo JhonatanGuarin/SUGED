@@ -22,10 +22,12 @@ export default function Layout() {
   ];
 
   return (
-    <div className="min-h-[100dvh] bg-slate-50 flex flex-col md:flex-row font-sans">
+    // 1. EL BLINDAJE: fixed inset-0 ancla la app a las 4 esquinas. overflow-hidden mata el scroll global.
+    <div className="fixed inset-0 bg-slate-50 flex flex-col md:flex-row font-sans overflow-hidden w-full">
       
       {/* HEADER MÓVIL (Solo visible en celulares) */}
-      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 sticky top-0 z-30 shadow-md">
+      {/* Añadimos pt-[max(1rem,env(safe-area-inset-top))] para protegerlo del "Notch" o la cámara del iPhone */}
+      <div className="md:hidden bg-[#1A1A1A] text-white flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] z-30 shadow-md shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-[#FFCC29] rounded-md flex items-center justify-center font-black text-[#1A1A1A]">
             S
@@ -42,11 +44,11 @@ export default function Layout() {
 
       {/* SIDEBAR (Menú lateral) */}
       <aside className={`
-        fixed md:sticky md:top-0 md:h-[100dvh] inset-y-0 left-0 z-50 w-72 bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        fixed md:relative inset-y-0 left-0 z-50 w-72 h-full bg-[#1A1A1A] text-slate-300 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Cabecera del Sidebar para móviles (Botón Cerrar) */}
-        <div className="md:hidden flex justify-end p-4 border-b border-slate-800/80">
+        <div className="md:hidden flex justify-end p-4 border-b border-slate-800/80 pt-[max(1rem,env(safe-area-inset-top))]">
           <button 
             onClick={() => setIsMobileMenuOpen(false)} 
             className="text-slate-400 hover:text-white transition-colors p-1"
@@ -139,9 +141,9 @@ export default function Layout() {
         />
       )}
 
-      {/* Área de Contenido Principal */}
-      <main className="flex-1 p-0 md:p-6 overflow-y-auto w-full mx-auto bg-slate-50">
-        <div className="max-w-[1600px] mx-auto h-full">
+      {/* 2. ÁREA DE CONTENIDO: Esta es la ÚNICA zona que ahora tiene permiso de hacer scroll */}
+      <main className="flex-1 overflow-y-auto bg-slate-50 relative pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-[1600px] mx-auto p-4 md:p-6 min-h-full">
           <Outlet />
         </div>
       </main>
