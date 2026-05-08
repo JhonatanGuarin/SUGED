@@ -79,7 +79,6 @@ export default function Escenarios() {
     const fechaLocal = new Date(hoy.getTime() - (hoy.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     const horaActualInt = hoy.getHours();
     
-    // CORRECCIÓN MATEMÁTICA: Calculamos la hora exacta actual (con minutos) para saber en qué punto del bloque estamos
     const horaExactaStr = `${hoy.getHours().toString().padStart(2, '0')}:${hoy.getMinutes().toString().padStart(2, '0')}:00`;
     
     let diaSemana = hoy.getDay();
@@ -87,39 +86,45 @@ export default function Escenarios() {
 
     await Promise.all(escenariosData.map(async (esc) => {
       try {
+        // --- FILTRO 1: ESTADO ---
         if (esc.estado !== 'ACTIVO') {
+          console.warn(`[${esc.nombre}] Bloqueado por Filtro 1: El estado no es ACTIVO.`);
           setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
           return;
         }
 
-        const { data: horario } = await supabase
+        const { data: horario, error: errorSupabase } = await supabase
           .from('horarios_escenarios')
           .select('hora_apertura, hora_cierre')
           .eq('escenario_id', esc.id)
           .eq('dia_semana', diaSemana)
           .maybeSingle();
 
+        if (errorSupabase) console.error(`[${esc.nombre}] Error de Supabase al consultar horario:`, errorSupabase);
+
+        // --- FILTRO 2: DÍA DE LA SEMANA ---
         if (!horario) {
+          console.warn(`[${esc.nombre}] Bloqueado por Filtro 2: No tiene "Horario Base" configurado para el día de hoy (Día ${diaSemana}).`);
           setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
           return;
         }
 
-        const apertura = parseInt(horario.hora_apertura.split(':')[0]);
-        const cierre = parseInt(horario.hora_cierre.split(':')[0]);
+        const apertura = parseInt(horario.hora_apertura.split(':')[0], 10);
+        const cierre = parseInt(horario.hora_cierre.split(':')[0], 10);
 
+        // --- FILTRO 3: HORAS HÁBILES ---
         if (horaActualInt < apertura || horaActualInt >= cierre) {
+          console.warn(`[${esc.nombre}] Bloqueado por Filtro 3: Fuera del horario base. Hora actual: ${horaActualInt}. Su horario es de ${apertura}:00 a ${cierre}:00.`);
           setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
           return;
         }
 
-        // EL TRUCO DEL CACHÉ: Inyectamos un timestamp único para obligar al navegador a buscar datos frescos
         const timestamp = hoy.getTime();
         const res = await fetchAPI(`/api/escenarios/${esc.id}/disponibilidad?fecha=${fechaLocal}&_t=${timestamp}`);
         
         if (res.ok) {
           const data = await res.json();
           
-          // CORRECCIÓN MATEMÁTICA: Verificamos si la hora exacta cae DENTRO del límite de un bloque libre
           const estaLibre = data.libres.some((bloque: any) => 
             horaExactaStr >= bloque.hora_inicio && horaExactaStr < bloque.hora_fin
           );
@@ -130,7 +135,6 @@ export default function Escenarios() {
             setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'OCUPADO' }));
             
             if (perfil?.rol === 'ADMIN') {
-              // Aplicamos también el truco del caché a la consulta de reserva actual
               const resReserva = await fetchAPI(`/api/escenarios/${esc.id}/reserva-actual?_t=${timestamp}`);
               if (resReserva.ok) {
                 const dataReserva = await resReserva.json();
@@ -143,9 +147,12 @@ export default function Escenarios() {
             }
           }
         } else {
+          console.warn(`[${esc.nombre}] La API respondió con código de error, marcando temporalmente como OCUPADO.`);
           setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'OCUPADO' }));
         }
       } catch (error) {
+        // --- FILTRO 4: CAÍDA DEL BACKEND ---
+        console.error(`[${esc.nombre}] Bloqueado por Filtro 4: El frontend falló al conectarse a la API (Posible caída del contenedor Docker o CORS). Error:`, error);
         setDisponibilidadActual(prev => ({ ...prev, [esc.id]: 'CERRADO' }));
       }
     }));
