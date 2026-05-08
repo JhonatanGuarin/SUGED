@@ -2,7 +2,11 @@ import { supabaseAdmin } from '../../core/supabase.js';
 
 // 1. Calcular disponibilidad matemática (CUADRÍCULA INTELIGENTE 2H/1H)
 export const obtenerBloquesDisponibles = async (escenarioId: string, fecha: string) => {
-  const dateObj = new Date(fecha);
+  // CORRECCIÓN: Parseo manual de YYYY-MM-DD para evitar desfase de zona horaria (UTC vs Local)
+  const [year, month, day] = fecha.split('-').map(Number) as [number, number, number];
+  const dateObj = new Date(year, month - 1, day);
+  
+  
   let diaSemana = dateObj.getDay();
   diaSemana = diaSemana === 0 ? 7 : diaSemana; 
 
@@ -114,7 +118,10 @@ export const crearHorario = async (escenarioId: string, datosHorario: any) => {
     .in('estado', ['PENDIENTE', 'APROBADA']); 
 
   const reservasAfectadas = (colisiones || []).filter((reserva) => {
-    const fechaObj = new Date(reserva.fecha_reserva);
+    // CORRECCIÓN: Parseo manual de YYYY-MM-DD para evitar el mismo error de validación
+    const [year, month, day] = reserva.fecha_reserva.split('-').map(Number) as [number, number, number];
+    const fechaObj = new Date(year, month - 1, day);
+    
     let diaReserva = fechaObj.getDay();
     diaReserva = diaReserva === 0 ? 7 : diaReserva; 
 
