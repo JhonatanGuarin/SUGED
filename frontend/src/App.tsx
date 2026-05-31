@@ -6,6 +6,7 @@ import Dashboard from './features/dashboard/Dashboard';
 import Escenarios from './features/escenarios/Escenarios';
 import Reservas from './features/reservas/Reservas';
 import Layout from './components/layout/Layout';
+import UnirseEquipo from './features/reservas/UnirseEquipo';
 
 const RutaProtegida = ({ children, rolesPermitidos }: { children: ReactNode, rolesPermitidos: string[] }) => {
   const { perfil } = useAuth();
@@ -27,6 +28,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
       
+      <Route path="/unirse/:id" element={<UnirseEquipo />} />
       <Route element={session ? <Layout /> : <Navigate to="/login" />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/escenarios" element={<Escenarios />} />

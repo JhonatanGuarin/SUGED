@@ -269,11 +269,13 @@ export default function Escenarios() {
   };
 
   const cargarBloqueos = async (escenarioId: string) => {
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = formatearFechaBackend(new Date()); 
+    
     const [resPuntuales, resFijos] = await Promise.all([
       supabase.from('bloqueos_escenarios').select('*').eq('escenario_id', escenarioId).gte('fecha', hoy).order('fecha', { ascending: true }),
       supabase.from('bloqueos_recurrentes').select('*').eq('escenario_id', escenarioId).order('dia_semana', { ascending: true })
     ]);
+    
     if (resPuntuales.data) setBloqueosActivos(resPuntuales.data);
     if (resFijos.data) setBloqueosFijos(resFijos.data);
   };
@@ -415,8 +417,7 @@ export default function Escenarios() {
                 )}
 
                 <h3 className="text-2xl font-black text-white mb-1 group-hover:text-[#FFCC29] transition-colors">{escenario.nombre}</h3>
-                <p className="text-slate-300 text-xs line-clamp-2 mb-3 font-medium leading-relaxed">{escenario.descripcion}</p>
-                <div className="flex items-center gap-2 text-[#FFCC29] text-xs font-bold mb-1"><Users size={14} /> Aforo máximo: <span className="text-white">{escenario.aforo} personas</span></div>
+                <div className="flex items-center gap-2 text-[#FFCC29] text-xs font-bold mb-1 mt-2"><Users size={14} /> Aforo máximo: <span className="text-white">{escenario.aforo} personas</span></div> 
 
                 {perfil?.rol === 'MEMBER_UPTC' && disponibilidadActual[escenario.id] === 'LIBRE' && (
                   <div className="mt-4 pt-4 border-t border-white/10 animate-in slide-in-from-bottom-2">

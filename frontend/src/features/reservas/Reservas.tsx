@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../app/supabase';
 import { useAuth } from '../../app/AuthContext';
-import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Ticket, History, ScanLine, AlertCircle, Search, Eye, Sparkles, Users, Edit2, ShieldAlert } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MapPin, ChevronRight, CheckCircle2, Check, X, Ticket, History, ScanLine, AlertCircle, Search, Eye, Sparkles, Users, Edit2, ShieldAlert, Share2, FileSpreadsheet } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { toast } from 'sonner';
@@ -14,19 +14,20 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { es } from 'date-fns/locale/es';
 registerLocale('es', es);
 
-interface Escenario { id: string; nombre: string; imagen_url: string; aforo: number; }
+interface Escenario { id: string; nombre: string; imagen_url: string; aforo: number; descripcion: string; }
 interface BloqueDisponible { hora_inicio: string; hora_fin: string; etiqueta: string; }
-interface UsuarioInfo { nombre_completo: string; rol: string; documento?: string; codigo?: string; carrera?: string; avatar_url?: string; }
+interface UsuarioInfo { nombre_completo: string; rol: string; documento?: string; codigo?: string; carrera?: string; avatar_url?: string; telefono?: string; }
+interface ParticipanteInfo { id?: string; usuarios: UsuarioInfo; }
 interface ReservaAdmin {
   id: string; fecha_reserva: string; hora_inicio: string; hora_fin: string; estado: string; 
-  escenarios: { nombre: string }; usuarios: UsuarioInfo;
+  escenarios: { nombre: string; aforo?: number }; usuarios: UsuarioInfo;
+  reservas_participantes?: ParticipanteInfo[];
 }
 
 const formatearFechaBackend = (fecha: Date) => {
   return new Date(fecha.getTime() - (fecha.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 };
 
-// TRUCO VISUAL: Calcula si una reserva APROBADA ya pasó en el tiempo
 const calcularEstadoVisual = (reserva: any) => {
   if (reserva.estado !== 'APROBADA') return reserva.estado;
   
@@ -40,7 +41,6 @@ const calcularEstadoVisual = (reserva: any) => {
   return 'APROBADA';
 };
 
-// FUNCIÓN PARA MEJORAR LA CALIDAD DEL AVATAR DE GOOGLE
 const obtenerAvatarHD = (url?: string) => {
   if (!url) return '';
   if (url.includes('googleusercontent.com') && url.includes('=s')) {
@@ -49,7 +49,6 @@ const obtenerAvatarHD = (url?: string) => {
   return url;
 };
 
-// Componente Premium para los Estados
 const RenderEstado = ({ estado }: { estado: string }) => {
   const config: Record<string, { bg: string, text: string, dot: string, label: string }> = {
     'PENDIENTE': { bg: 'bg-yellow-500/10', text: 'text-yellow-600', dot: 'bg-yellow-500', label: 'En Revisión' },
@@ -78,6 +77,16 @@ export default function Reservas() {
   const [filtroEstado, setFiltroEstado] = useState('TODOS');
   const [filtroFecha, setFiltroFecha] = useState('');
   const [usuarioCarnet, setUsuarioCarnet] = useState<UsuarioInfo | null>(null);
+  const [reservaExpandida, setReservaExpandida] = useState<string | null>(null);
+  const [descargandoReporte, setDescargandoReporte] = useState(false);
+  
+  // Estados Modal Reporte
+  const [modalReporteAbierto, setModalReporteAbierto] = useState(false);
+  const [filtroReporteInicio, setFiltroReporteInicio] = useState('');
+  const [filtroReporteFin, setFiltroReporteFin] = useState('');
+  const [filtroReporteEscenario, setFiltroReporteEscenario] = useState('TODOS');
+
+  const toggleExpandir = (id: string) => setReservaExpandida(prev => prev === id ? null : id);
 
   // Estados Usuario
   const [vistaActiva, setVistaActiva] = useState<'NUEVA' | 'HISTORIAL'>('NUEVA');
@@ -94,8 +103,15 @@ export default function Reservas() {
   const [cargandoHoras, setCargandoHoras] = useState(false);
   const [bloqueSeleccionado, setBloqueSeleccionado] = useState<BloqueDisponible | null>(null);
   const [procesandoReserva, setProcesandoReserva] = useState(false);
-  const [datosPerfilFaltantes, setDatosPerfilFaltantes] = useState({ documento: '', codigo: '', carrera: '' });
+  
+  // Estado para el peaje, ahora incluye telefono
+  const [datosPerfilFaltantes, setDatosPerfilFaltantes] = useState({ documento: '', codigo: '', carrera: '', telefono: '' });
   const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+
+  // Estados de Invitación a Equipo
+  const [reservaEquipo, setReservaEquipo] = useState<any | null>(null);
+  const [enlaceCopiado, setEnlaceCopiado] = useState(false);
+  const [verEquipoReserva, setVerEquipoReserva] = useState<any | null>(null);
 
   useEffect(() => {
     document.title = "Gestión de Reservas | SUGED";
@@ -110,15 +126,26 @@ export default function Reservas() {
         window.history.replaceState({}, document.title);
       }
     }
-    if (perfil?.rol === 'ADMIN') cargarReservasAdmin();
-    else { cargarEscenariosUsuario(); cargarMisReservas(); }
+
+    cargarEscenariosUsuario(); 
+
+    if (perfil?.rol === 'ADMIN') {
+      cargarReservasAdmin();
+    } else { 
+      cargarMisReservas(); 
+    }
   }, [perfil, location]);
 
   const cargarReservasAdmin = async () => {
     setCargandoInicial(true);
     const { data } = await supabase
       .from('reservas')
-      .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url )`)
+      .select(`
+        id, fecha_reserva, hora_inicio, hora_fin, estado, 
+        escenarios ( nombre, aforo ), 
+        usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url, telefono ),
+        reservas_participantes ( usuarios ( nombre_completo, documento, avatar_url, telefono ) )
+      `)
       .order('fecha_reserva', { ascending: false });
     if (data) setReservasAdmin(data as any[]);
     setCargandoInicial(false);
@@ -161,7 +188,12 @@ export default function Reservas() {
     try {
       const { data, error } = await supabase
         .from('reservas')
-        .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre ), usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url )`)
+        .select(`
+          id, fecha_reserva, hora_inicio, hora_fin, estado, 
+          escenarios ( nombre, aforo ), 
+          usuarios!fk_reservas_usuarios ( nombre_completo, rol, documento, codigo, carrera, avatar_url ),
+          reservas_participantes ( usuarios ( nombre_completo, documento, avatar_url ) )
+        `)
         .eq('id', textoLector)
         .single();
 
@@ -175,9 +207,7 @@ export default function Reservas() {
         return; 
       }
 
-      // LA MAGIA DEL TIEMPO (VERSIÓN ROBUSTA)
       const ahora = new Date();
-      
       const reservaInicio = new Date(`${data.fecha_reserva}T${data.hora_inicio}`);
       const reservaFin = new Date(`${data.fecha_reserva}T${data.hora_fin}`);
       
@@ -209,6 +239,57 @@ export default function Reservas() {
     }
   };
 
+  const descargarReporteExcel = async () => {
+    if (!session) return;
+    setDescargandoReporte(true);
+    const toastId = toast.loading('Generando reporte Excel...');
+
+    try {
+      const urlParams = new URLSearchParams();
+      if (filtroReporteInicio) urlParams.append('fechaInicio', filtroReporteInicio);
+      if (filtroReporteFin) urlParams.append('fechaFin', filtroReporteFin);
+      if (filtroReporteEscenario !== 'TODOS') urlParams.append('escenarioId', filtroReporteEscenario);
+
+      // Usamos tu fetchAPI nativo. Él solito pone la URL base y el token de Supabase.
+      const res = await fetchAPI(`/api/reservas/reporte/excel?${urlParams.toString()}`, {
+        method: 'GET'
+      });
+
+      const contentType = res.headers.get('content-type');
+      
+      // Si el servidor nos mandó un JSON con un error
+      if (contentType && contentType.includes('application/json')) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Error del servidor al generar el Excel.');
+      }
+      
+      // Si el archivo es HTML, significa que la ruta no existe en el backend y Vite nos mandó el index.html
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error('La ruta del reporte no fue encontrada en el servidor.');
+      }
+
+      if (!res.ok) throw new Error('Error al descargar el archivo.');
+
+      // Si todo sale bien, extraemos el binario (Blob)
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Reporte_SUGED_${filtroReporteInicio || 'General'}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setModalReporteAbierto(false);
+      toast.success('¡Reporte descargado con éxito!', { id: toastId });
+    } catch (error: any) {
+      toast.error('Error en la descarga', { description: error.message, id: toastId });
+    } finally {
+      setDescargandoReporte(false);
+    }
+  };
+
   const reservasFiltradas = reservasAdmin.filter((res) => {
     const coincideNombre = res.usuarios?.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) || false;
     const coincideEscenario = res.escenarios?.nombre.toLowerCase().includes(busqueda.toLowerCase()) || false;
@@ -236,7 +317,11 @@ export default function Reservas() {
 
     const { data } = await supabase
       .from('reservas')
-      .select(`id, fecha_reserva, hora_inicio, hora_fin, estado, escenarios ( nombre )`)
+      .select(`
+        id, fecha_reserva, hora_inicio, hora_fin, estado, 
+        escenarios ( nombre, aforo ),
+        reservas_participantes ( id, usuarios ( nombre_completo, avatar_url, documento ) )
+      `)
       .eq('usuario_id', session.user.id)
       .order('fecha_reserva', { ascending: false })
       .order('hora_inicio', { ascending: false });
@@ -306,7 +391,13 @@ export default function Reservas() {
     setGuardandoPerfil(true);
     const toastId = toast.loading('Actualizando perfil y enviando solicitud...');
     try {
-      const { error: errorPerfil } = await supabase.from('usuarios').update({ documento: datosPerfilFaltantes.documento, codigo: datosPerfilFaltantes.codigo, carrera: datosPerfilFaltantes.carrera }).eq('id', session.user.id);
+      const { error: errorPerfil } = await supabase.from('usuarios').update({ 
+        documento: datosPerfilFaltantes.documento, 
+        codigo: datosPerfilFaltantes.codigo, 
+        carrera: datosPerfilFaltantes.carrera,
+        telefono: datosPerfilFaltantes.telefono 
+      }).eq('id', session.user.id);
+      
       if (errorPerfil) throw new Error("Error al guardar tus datos personales.");
       await recargarPerfil();
       await procesarPeticionReserva(toastId);
@@ -319,6 +410,29 @@ export default function Reservas() {
 
   const confirmarReserva = async () => { 
     if (!session || !escenarioSeleccionado || !bloqueSeleccionado) return; 
+    
+    const confirmacion = await Swal.fire({
+      title: `<span style="color: #1A1A1A; font-weight: 900; font-size: 1.5rem;">Normas del Escenario</span>`,
+      html: `
+        <div style="text-align: left; background-color: #f8fafc; padding: 1.25rem; border-radius: 1rem; border: 1px solid #e2e8f0; font-size: 0.875rem; color: #475569; max-height: 250px; overflow-y: auto; line-height: 1.6; margin-top: 0.5rem; margin-bottom: 0.5rem;">
+          ${escenarioSeleccionado.descripcion ? escenarioSeleccionado.descripcion.replace(/\n/g, '<br/>') : 'Al reservar este espacio, te comprometes a hacer un uso adecuado de las instalaciones y respetar las normas de la universidad.'}
+        </div>
+        <p style="font-size: 0.75rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-top: 1rem;">
+          ¿Aceptas el reglamento y deseas enviar la solicitud?
+        </p>
+      `,
+      iconColor: '#FFCC29',
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonColor: '#FFCC29',
+      cancelButtonColor: '#f1f5f9',
+      confirmButtonText: '<span style="color: #1A1A1A; font-weight: bold;">Sí, Acepto y Reservar</span>',
+      cancelButtonText: '<span style="color: #64748b; font-weight: bold;">Cancelar</span>',
+      customClass: { popup: 'rounded-[2rem]' }
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
     setProcesandoReserva(true); 
     const toastId = toast.loading('Enviando solicitud...');
     await procesarPeticionReserva(toastId);
@@ -338,7 +452,15 @@ export default function Reservas() {
     } 
   };
 
-  const leFaltanDatos = !perfil?.documento || !perfil?.codigo || !perfil?.carrera;
+  const copiarEnlace = (id: string) => {
+    const url = `${window.location.origin}/unirse/${id}`;
+    navigator.clipboard.writeText(url);
+    setEnlaceCopiado(true);
+    toast.success('¡Enlace copiado al portapapeles!');
+    setTimeout(() => setEnlaceCopiado(false), 2000);
+  };
+
+  const leFaltanDatos = !perfil?.documento || !perfil?.codigo || !perfil?.carrera || !perfil?.telefono;
   const { minDateObj, maxDateObj } = getFechasPermitidasObj();
   
   const ESTADOS_TABS = ['TODOS', 'PENDIENTE', 'APROBADA', 'CANCELADA', 'FINALIZADA'];
@@ -367,8 +489,8 @@ export default function Reservas() {
         {vistaAdmin === 'TABLA' && (
           <div className="animate-in fade-in duration-500">
             
-            <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-8 space-y-4 shadow-sm">
-              <div className="flex flex-col md:flex-row gap-4">
+            <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-8 shadow-sm">
+              <div className="flex flex-col md:flex-row gap-4 mb-4">
                 <div className="flex-1 relative group">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#FFCC29] transition-colors" size={18} />
                   <input type="text" placeholder="Buscar estudiante o escenario..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-12 pr-4 py-3.5 rounded-2xl border border-slate-300 outline-none focus:border-[#FFCC29] focus:ring-4 focus:ring-[#FFCC29]/10 bg-white text-sm font-medium transition-all" />
@@ -379,12 +501,22 @@ export default function Reservas() {
                 </div>
               </div>
               
-              <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-hide">
-                {ESTADOS_TABS.map(estado => (
-                  <button key={estado} onClick={() => setFiltroEstado(estado)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-300 border ${filtroEstado === estado ? 'bg-[#1A1A1A] text-[#FFCC29] border-[#1A1A1A] shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
-                    {estado === 'TODOS' ? 'Todas las reservas' : estado.replace('_', ' ')}
-                  </button>
-                ))}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pt-4 border-t border-slate-200/70">
+                <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-hide w-full md:w-auto">
+                  {ESTADOS_TABS.map(estado => (
+                    <button key={estado} onClick={() => setFiltroEstado(estado)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-300 border ${filtroEstado === estado ? 'bg-[#1A1A1A] text-[#FFCC29] border-[#1A1A1A] shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
+                      {estado === 'TODOS' ? 'Todas las reservas' : estado.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={() => setModalReporteAbierto(true)}
+                  className="shrink-0 w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-slate-300 text-[#1A1A1A] rounded-xl text-xs font-bold hover:border-[#107c41] hover:text-[#107c41] hover:shadow-sm transition-all"
+                >
+                  <FileSpreadsheet size={16} className="text-[#107c41]" /> 
+                  Descargar Reporte
+                </button>
               </div>
             </div>
 
@@ -414,46 +546,82 @@ export default function Reservas() {
                       {reservasFiltradas.map((res) => {
                         const estadoVisual = calcularEstadoVisual(res);
                         return (
-                        <tr key={res.id} className="hover:bg-slate-50 transition-colors group cursor-default">
-                          <td className="px-6 py-4">
-                            <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
-                              
-                              <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform overflow-hidden border border-slate-200 shrink-0">
-                                {res.usuarios?.avatar_url ? (
-                                  <img src={obtenerAvatarHD(res.usuarios.avatar_url)} alt="Perfil" className="w-full h-full object-cover" />
-                                ) : (
-                                  res.usuarios?.nombre_completo.charAt(0).toUpperCase()
-                                )}
-                              </div>
+                        <React.Fragment key={res.id}>
+                          <tr className={`hover:bg-slate-50 transition-colors group cursor-default ${reservaExpandida === res.id ? 'bg-slate-50' : ''}`}>
+                            <td className="px-6 py-4">
+                              <button onClick={() => setUsuarioCarnet(res.usuarios)} className="text-left flex items-center gap-3">
+                                
+                                <div className="w-10 h-10 rounded-full bg-[#1A1A1A] text-[#FFCC29] font-black flex items-center justify-center text-sm shadow-sm group-hover:scale-105 transition-transform overflow-hidden border border-slate-200 shrink-0">
+                                  {res.usuarios?.avatar_url ? (
+                                    <img src={obtenerAvatarHD(res.usuarios.avatar_url)} alt="Perfil" className="w-full h-full object-cover" />
+                                  ) : (
+                                    res.usuarios?.nombre_completo.charAt(0).toUpperCase()
+                                  )}
+                                </div>
 
-                              <div>
-                                <div className="font-bold text-[#1A1A1A] group-hover:text-blue-600 transition-colors flex items-center gap-1.5 line-clamp-1">
-                                  {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div>
+                                  <div className="font-bold text-[#1A1A1A] group-hover:text-blue-600 transition-colors flex items-center gap-1.5 line-clamp-1">
+                                    {res.usuarios?.nombre_completo || 'Desconocido'} <Eye size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-medium tracking-wide uppercase">
+                                    {res.usuarios?.rol === 'MEMBER_UPTC' ? 'Estudiante' : res.usuarios?.rol === 'ADMIN' ? 'Administrador' : res.usuarios?.rol}
+                                  </div>
                                 </div>
-                                <div className="text-[11px] text-slate-500 font-medium tracking-wide uppercase">
-                                  {res.usuarios?.rol === 'MEMBER_UPTC' ? 'Estudiante' : res.usuarios?.rol === 'ADMIN' ? 'Administrador' : res.usuarios?.rol}
+                              </button>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-[#1A1A1A] text-sm">{res.escenarios?.nombre}</div>
+                              {res.reservas_participantes && res.reservas_participantes.length > 0 && (
+                                <button onClick={() => toggleExpandir(res.id)} className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-[#FFCC29] transition-colors bg-white px-2 py-1 rounded-md border border-slate-200 hover:border-[#FFCC29] hover:shadow-sm">
+                                  <Users size={12}/> {res.reservas_participantes.length} Invitados
+                                </button>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-bold text-[#1A1A1A]">{res.fecha_reserva}</div>
+                              <div className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5"><Clock size={12}/> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</div>
+                            </td>
+                            <td className="px-6 py-4"><RenderEstado estado={estadoVisual} /></td>
+                            <td className="px-6 py-4 text-right flex justify-end gap-2">
+                              {estadoVisual === 'PENDIENTE' && (
+                                <>
+                                  <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="p-2.5 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Aprobar"><Check size={18} /></button>
+                                  <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
+                                </>
+                              )}
+                              {estadoVisual === 'APROBADA' && (
+                                <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-slate-50 text-slate-500 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Cancelar Reserva"><X size={18} /></button>
+                              )}
+                            </td>
+                          </tr>
+
+                          {/* LA FILA DESPLEGABLE (ACORDEÓN) */}
+                          {reservaExpandida === res.id && res.reservas_participantes && (
+                            <tr className="bg-slate-50/80 border-b border-slate-100 shadow-inner">
+                              <td colSpan={5} className="p-0">
+                                <div className="px-6 py-4 animate-in slide-in-from-top-2 duration-200">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Users size={14} className="text-[#FFCC29]" />
+                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Acompañantes Registrados</span>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {res.reservas_participantes.map((p, i) => (
+                                      <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center gap-3 shadow-sm">
+                                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-[#1A1A1A] text-xs overflow-hidden shrink-0 border border-slate-200">
+                                          {p.usuarios.avatar_url ? <img src={obtenerAvatarHD(p.usuarios.avatar_url)} className="w-full h-full object-cover"/> : p.usuarios.nombre_completo.charAt(0)}
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-bold text-[#1A1A1A] line-clamp-1">{p.usuarios.nombre_completo}</span>
+                                          <span className="text-[10px] text-slate-400 font-medium font-mono">{p.usuarios.documento || 'Sin doc'}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            </button>
-                          </td>
-                          <td className="px-6 py-4 font-bold text-[#1A1A1A] text-sm">{res.escenarios?.nombre}</td>
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-bold text-[#1A1A1A]">{res.fecha_reserva}</div>
-                            <div className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5"><Clock size={12}/> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</div>
-                          </td>
-                          <td className="px-6 py-4"><RenderEstado estado={estadoVisual} /></td>
-                          <td className="px-6 py-4 text-right flex justify-end gap-2">
-                            {estadoVisual === 'PENDIENTE' && (
-                              <>
-                                <button onClick={() => manejarCambioEstado(res, 'APROBADA')} className="p-2.5 bg-green-50 text-green-600 hover:bg-green-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Aprobar"><Check size={18} /></button>
-                                <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Rechazar"><X size={18} /></button>
-                              </>
-                            )}
-                            {estadoVisual === 'APROBADA' && (
-                              <button onClick={() => manejarCambioEstado(res, 'CANCELADA')} className="p-2.5 bg-slate-50 text-slate-500 hover:bg-red-500 hover:text-white rounded-xl transition-all hover:shadow-md hover:scale-105" title="Cancelar Reserva"><X size={18} /></button>
-                            )}
-                          </td>
-                        </tr>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       )})}
                     </tbody>
                   </table>
@@ -488,13 +656,33 @@ export default function Reservas() {
                       
                       <div className="bg-slate-50 rounded-2xl p-4 text-sm border border-slate-100 mb-4">
                         <div className="flex justify-between items-start mb-2">
-                          <div className="font-black text-[#1A1A1A]">{res.escenarios?.nombre}</div>
+                          <div>
+                            <div className="font-black text-[#1A1A1A]">{res.escenarios?.nombre}</div>
+                            {res.reservas_participantes && res.reservas_participantes.length > 0 && (
+                              <button onClick={() => toggleExpandir(res.id)} className="mt-1 text-[10px] font-bold text-slate-500 flex items-center gap-1 hover:text-[#FFCC29] transition-colors"><Users size={12}/> Ver Equipo ({res.reservas_participantes.length})</button>
+                            )}
+                          </div>
                           <RenderEstado estado={estadoVisual} />
                         </div>
                         <div className="flex flex-col gap-2 mt-3 text-xs font-medium text-slate-600">
                           <div className="flex items-center gap-2"><CalendarIcon size={14} className="text-[#FFCC29]"/> {res.fecha_reserva}</div>
                           <div className="flex items-center gap-2"><Clock size={14} className="text-[#FFCC29]"/> {res.hora_inicio.slice(0,5)} - {res.hora_fin.slice(0,5)}</div>
                         </div>
+
+                        {/* Acordeón en móvil */}
+                        {reservaExpandida === res.id && res.reservas_participantes && (
+                          <div className="mt-4 pt-3 border-t border-slate-200 grid grid-cols-1 gap-2 animate-in slide-in-from-top-2">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Acompañantes</p>
+                            {res.reservas_participantes.map((p, i) => (
+                              <div key={i} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-100">
+                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center font-bold text-[#1A1A1A] text-[10px] overflow-hidden shrink-0 border border-slate-200">
+                                  {p.usuarios.avatar_url ? <img src={obtenerAvatarHD(p.usuarios.avatar_url)} className="w-full h-full object-cover"/> : p.usuarios.nombre_completo.charAt(0)}
+                                </div>
+                                <span className="text-[11px] font-bold text-[#1A1A1A] line-clamp-1">{p.usuarios.nombre_completo}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-3">
@@ -551,6 +739,10 @@ export default function Reservas() {
                   <div>
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Documento</p>
                     <p className="font-black text-[#1A1A1A] text-sm">{usuarioCarnet.documento || 'N/A'}</p>
+                  </div>
+                  <div className="col-span-2 border-t border-slate-100 pt-3">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Teléfono</p>
+                    <p className="font-black text-[#1A1A1A] text-sm">{usuarioCarnet.telefono || 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -620,6 +812,34 @@ export default function Reservas() {
                     </div>
                   </div>
                 )}
+
+                {/* EL NUEVO BLOQUE DE INVITADOS PARA EL GUARDIA */}
+                {resultadoEscaneo.datos?.reservas_participantes && resultadoEscaneo.datos.reservas_participantes.length > 0 && (
+                  <div className="mt-4 text-left animate-in fade-in duration-500 delay-150">
+                    <div className="bg-[#1A1A1A] text-white px-4 py-2.5 rounded-t-2xl text-xs font-bold flex justify-between items-center shadow-md">
+                      <span className="flex items-center gap-2"><Users size={14} className="text-[#FFCC29]"/> Equipo Autorizado</span>
+                      <span className="bg-white/10 px-2 py-0.5 rounded-md text-[#FFCC29]">{resultadoEscaneo.datos.reservas_participantes.length} personas</span>
+                    </div>
+                    
+                    {/* Contenedor con altura máxima y scroll interno */}
+                    <div className="bg-slate-50 border border-slate-200 border-t-0 rounded-b-2xl max-h-[200px] overflow-y-auto overflow-x-hidden divide-y divide-slate-100 custom-scrollbar shadow-inner">
+                      {resultadoEscaneo.datos.reservas_participantes.map((p, i) => (
+                        <div key={i} className="p-3 flex items-center gap-3 hover:bg-white transition-colors">
+                          <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-black text-[#1A1A1A] text-xs overflow-hidden shrink-0 border border-slate-300">
+                             {p.usuarios.avatar_url ? <img src={obtenerAvatarHD(p.usuarios.avatar_url)} className="w-full h-full object-cover"/> : p.usuarios.nombre_completo.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-[#1A1A1A] truncate">{p.usuarios.nombre_completo}</p>
+                            <p className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">CC: {p.usuarios.documento || 'N/A'}</p>
+                          </div>
+                          <div className="shrink-0 text-green-500">
+                            <CheckCircle2 size={16} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 
                 <button onClick={() => setResultadoEscaneo(null)} className="mt-8 w-full bg-[#1A1A1A] text-white py-3.5 rounded-xl font-black hover:bg-black transition-all text-sm uppercase tracking-wide">
                   Escanear otro código
@@ -628,10 +848,67 @@ export default function Reservas() {
             )}
           </div>
         )}
+
+        {/* MODAL: CONFIGURACIÓN DE REPORTE EXCEL (ADMIN) */}
+        {modalReporteAbierto && (
+          <div className="fixed inset-0 bg-[#1A1A1A]/90 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 relative flex flex-col border border-slate-200">
+              
+              <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="font-black text-[#1A1A1A] text-lg flex items-center gap-2">
+                  <FileSpreadsheet className="text-[#107c41]"/> Generar Reporte
+                </h3>
+                <button onClick={() => setModalReporteAbierto(false)} className="text-slate-400 hover:text-[#1A1A1A] bg-white hover:bg-slate-100 p-2 rounded-full transition-colors border border-slate-200 shadow-sm"><X size={18}/></button>
+              </div>
+              
+              <div className="p-6 space-y-5">
+                
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Rango de Fechas (Opcional)</label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 relative">
+                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <DatePicker selected={filtroReporteInicio ? new Date(`${filtroReporteInicio}T12:00:00`) : null} onChange={(date: Date | null) => setFiltroReporteInicio(date ? formatearFechaBackend(date) : '')} placeholderText="Desde" locale="es" dateFormat="dd/MM/yyyy" isClearable className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-[#107c41] outline-none" />
+                    </div>
+                    <span className="text-slate-300">-</span>
+                    <div className="flex-1 relative">
+                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <DatePicker selected={filtroReporteFin ? new Date(`${filtroReporteFin}T12:00:00`) : null} onChange={(date: Date | null) => setFiltroReporteFin(date ? formatearFechaBackend(date) : '')} placeholderText="Hasta" locale="es" dateFormat="dd/MM/yyyy" isClearable className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-[#107c41] outline-none" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Filtrar por Escenario</label>
+                  <select value={filtroReporteEscenario} onChange={(e) => setFiltroReporteEscenario(e.target.value)} className="w-full p-3 rounded-xl border border-slate-300 text-sm font-medium focus:border-[#107c41] outline-none bg-white">
+                    <option value="TODOS">Todos los escenarios</option>
+                    {escenarios.map(esc => (
+                      <option key={esc.id} value={esc.id}>{esc.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Se generará un archivo Excel (.xlsx) estructurado con dos pestañas: el consolidado operativo de reservas y el desglose demográfico de asistentes.
+                  </p>
+                </div>
+
+                <button onClick={descargarReporteExcel} disabled={descargandoReporte} className="w-full bg-[#107c41] text-white py-3.5 rounded-xl font-bold text-sm hover:bg-[#0c6132] transition-all flex justify-center items-center gap-2 shadow-lg shadow-[#107c41]/20 disabled:opacity-50 mt-4">
+                  {descargandoReporte ? 'Generando Archivo...' : 'Descargar Archivo'}
+                </button>
+
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  // ==========================================
+  // VISTA USUARIO (NORMAL)
+  // ==========================================
   return (
     <div className="bg-white p-4 md:p-8 rounded-xl shadow-sm border border-slate-200 min-h-[80vh] flex flex-col">
       <div className="mb-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-4">
@@ -774,6 +1051,7 @@ export default function Reservas() {
                               <input required type="text" value={datosPerfilFaltantes.documento} onChange={e => setDatosPerfilFaltantes({...datosPerfilFaltantes, documento: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white outline-none focus:border-[#FFCC29] text-sm" placeholder="Doc. Identidad"/>
                               <input required type="text" value={datosPerfilFaltantes.codigo} onChange={e => setDatosPerfilFaltantes({...datosPerfilFaltantes, codigo: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white outline-none focus:border-[#FFCC29] text-sm" placeholder="Cód. Estudiantil"/>
                               <input required type="text" value={datosPerfilFaltantes.carrera} onChange={e => setDatosPerfilFaltantes({...datosPerfilFaltantes, carrera: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white outline-none focus:border-[#FFCC29] text-sm" placeholder="Carrera / Programa"/>
+                              <input required type="tel" value={datosPerfilFaltantes.telefono} onChange={e => setDatosPerfilFaltantes({...datosPerfilFaltantes, telefono: e.target.value})} className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white outline-none focus:border-[#FFCC29] text-sm" placeholder="Número de Celular"/>
                               <button type="submit" disabled={guardandoPerfil} className="w-full bg-[#FFCC29] text-[#1A1A1A] py-3 rounded-xl font-black hover:bg-[#e6b825] transition-all disabled:opacity-50 mt-2">{guardandoPerfil ? 'Procesando...' : 'Guardar y Reservar'}</button>
                             </form>
                           ) : (
@@ -843,9 +1121,18 @@ export default function Reservas() {
                             <p className="text-xs text-slate-400 mt-1 max-w-[200px] mx-auto">Esperando aprobación del administrador.</p>
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center text-center">
+                          <div className="flex flex-col items-center text-center w-full">
                             <div className="bg-white p-2 rounded-xl mb-3"><QRCodeSVG value={res.id} size={100} level="H" includeMargin={false} fgColor="#1A1A1A" /></div>
-                            <p className="text-xs font-bold text-green-400 uppercase tracking-widest flex items-center gap-1"><CheckCircle2 size={14}/> Aprobada</p>
+                            <p className="text-xs font-bold text-green-400 uppercase tracking-widest flex items-center gap-1 mb-4"><CheckCircle2 size={14}/> Aprobada</p>
+                            
+                            <div className="flex gap-2 w-full mt-2">
+                              <button onClick={() => setReservaEquipo(res)} className="flex-1 bg-[#FFCC29] text-[#1A1A1A] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#e6b825] hover:scale-105 transition-all shadow-[0_0_15px_rgba(255,204,41,0.15)]">
+                                <Share2 size={16} /> Invitar
+                              </button>
+                              <button onClick={() => setVerEquipoReserva(res)} className="flex-1 bg-white/10 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/20 transition-all border border-white/10">
+                                <Users size={16} /> Equipo ({res.reservas_participantes?.length || 0})
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -893,6 +1180,72 @@ export default function Reservas() {
           </div>
         )}
       </div>
+
+      {/* MODAL DE INVITACIÓN AL EQUIPO */}
+      {reservaEquipo && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/90 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 relative flex flex-col border border-slate-200">
+            
+            <div className="flex justify-between items-center p-5 border-b border-slate-100">
+              <h3 className="font-black text-[#1A1A1A] text-lg flex items-center gap-2"><Users className="text-[#FFCC29]"/> Invitar Amigos</h3>
+              <button onClick={() => setReservaEquipo(null)} className="text-slate-400 hover:text-[#1A1A1A] bg-slate-50 hover:bg-slate-100 p-2 rounded-full transition-colors"><X size={18}/></button>
+            </div>
+            
+            <div className="p-6 flex flex-col items-center text-center bg-slate-50/50">
+              <p className="text-sm text-slate-500 font-medium mb-6 leading-relaxed">
+                Pídele a tus amigos que escaneen este código para unirse a tu reserva en <strong className="text-[#1A1A1A]">{reservaEquipo.escenarios?.nombre}</strong>.
+              </p>
+              
+              <div className="bg-white p-4 rounded-3xl shadow-sm border-2 border-slate-100 mb-8 transform transition-transform hover:scale-105 duration-300">
+                <QRCodeSVG value={`${window.location.origin}/unirse/${reservaEquipo.id}`} size={200} level="H" includeMargin={false} fgColor="#1A1A1A" />
+              </div>
+              
+              <button onClick={() => copiarEnlace(reservaEquipo.id)} className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${enlaceCopiado ? 'bg-green-100 text-green-700 shadow-inner' : 'bg-[#1A1A1A] text-white hover:bg-black shadow-lg'}`}>
+                {enlaceCopiado ? <Check size={18}/> : <Share2 size={18}/>}
+                {enlaceCopiado ? '¡Enlace Copiado!' : 'Copiar enlace de invitación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VER MI EQUIPO (VISTA TITULAR) */}
+      {verEquipoReserva && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/90 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 relative flex flex-col border border-slate-200">
+            
+            <div className="flex justify-between items-center p-5 border-b border-slate-100">
+              <h3 className="font-black text-[#1A1A1A] text-lg flex items-center gap-2"><Users className="text-[#FFCC29]"/> Mi Equipo Registrado</h3>
+              <button onClick={() => setVerEquipoReserva(null)} className="text-slate-400 hover:text-[#1A1A1A] bg-slate-50 hover:bg-slate-100 p-2 rounded-full transition-colors"><X size={18}/></button>
+            </div>
+            
+            <div className="p-6 bg-slate-50/50 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {verEquipoReserva.reservas_participantes && verEquipoReserva.reservas_participantes.length > 0 ? (
+                <div className="space-y-3">
+                  {verEquipoReserva.reservas_participantes.map((p: any, i: number) => (
+                    <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm animate-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 50}ms` }}>
+                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-[#1A1A1A] overflow-hidden border border-slate-200 shrink-0">
+                        {p.usuarios?.avatar_url ? <img src={obtenerAvatarHD(p.usuarios.avatar_url)} className="w-full h-full object-cover"/> : p.usuarios?.nombre_completo.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-[#1A1A1A] truncate">{p.usuarios?.nombre_completo}</p>
+                        <p className="text-[10px] text-green-500 font-bold uppercase tracking-widest flex items-center gap-1 mt-0.5"><CheckCircle2 size={12}/> Inscrito</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400">
+                  <Users size={32} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-bold text-[#1A1A1A] mb-1">Aún no hay invitados</p>
+                  <p className="text-xs">Comparte tu enlace QR para que tus amigos se unan a la reserva.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

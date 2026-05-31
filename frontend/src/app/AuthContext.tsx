@@ -9,6 +9,7 @@ interface PerfilUsuario {
   documento: string | null;
   codigo: string | null;
   carrera: string | null;
+  telefono: string | null;
 }
 
 interface AuthState {
@@ -31,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Modificamos el select para incluir los nuevos campos
       const { data } = await supabase
         .from('usuarios')
-        .select('nombre_completo, rol, avatar_url, documento, codigo, carrera')
+        .select('nombre_completo, rol, avatar_url, documento, codigo, carrera, telefono')
         .eq('id', sesionActual.user.id)
         .single();
       
