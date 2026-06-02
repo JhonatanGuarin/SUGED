@@ -156,13 +156,14 @@ export default function Login() {
       </div>
 
       {/* ========================================================= */}
-      {/* MODAL: ACERCA DE SUGED (Sin cambios estructurales, solo pulido) */}
+      {/* MODAL: ACERCA DE SUGED (Con Equipo de Trabajo) */}
       {/* ========================================================= */}
       {isAboutOpen && (
         <div className="fixed inset-0 bg-[#1A1A1A]/80 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-[#1A1A1A] border border-white/10 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-[#1A1A1A] border border-white/10 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             
-            <div className="p-6 border-b border-white/5 flex justify-between items-start bg-white/5">
+            {/* Header del Modal */}
+            <div className="p-6 border-b border-white/5 flex justify-between items-start bg-white/5 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#FFCC29] rounded-xl flex items-center justify-center font-black text-[#1A1A1A] text-xl">S</div>
                 <div>
@@ -173,9 +174,12 @@ export default function Login() {
               <button onClick={() => setIsAboutOpen(false)} className="text-slate-400 hover:text-white transition-colors bg-white/5 p-1 rounded-full"><X size={20} /></button>
             </div>
 
-            <div className="p-8 space-y-6">
+            {/* Contenido con Scroll */}
+            <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar space-y-10">
+              
+              {/* Sección Stack Tecnológico */}
               <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 text-center">Stack Tecnológico</h3>
+                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4 text-center">Stack Tecnológico</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-black/30 border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-3 hover:bg-white/5 hover:border-white/10 transition-all cursor-default">
                     <LayoutTemplate size={24} className="text-[#61DAFB]" />
@@ -191,9 +195,30 @@ export default function Login() {
                   </div>
                 </div>
               </div>
+
+              {/* Sección Equipo de Desarrollo */}
+              <div>
+                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4 text-center">Equipo de Desarrollo</h3>
+                <div className="flex flex-col gap-2">
+                  {[
+                    { nombre: 'Alejandra Leal', rol: 'Product Owner (PO)' },
+                    { nombre: 'David Nuncira', rol: 'Scrum Master (SM)' },
+                    { nombre: 'Jhonatan Guarin', rol: 'Developer Frontend' },
+                    { nombre: 'Estevan Vivas', rol: 'Developer Backend' },
+                    { nombre: 'Juan Fernández', rol: 'QA (Calidad)' },
+                  ].map((miembro, i) => (
+                    <div key={i} className="flex items-center justify-between p-3.5 rounded-xl bg-black/30 border border-white/5 hover:bg-white/5 transition-colors cursor-default">
+                      <span className="text-sm font-bold text-slate-200">{miembro.nombre}</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-[#FFCC29] text-right ml-2">{miembro.rol}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
 
-            <div className="p-4 bg-black/60 text-center border-t border-white/5">
+            {/* Footer del Modal */}
+            <div className="p-4 bg-black/60 text-center border-t border-white/5 shrink-0">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">© 2026 Universidad Pedagógica y Tecnológica de Colombia</p>
             </div>
           </div>
