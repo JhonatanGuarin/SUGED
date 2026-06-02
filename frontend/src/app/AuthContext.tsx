@@ -28,30 +28,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [cargando, setCargando] = useState(true);
 
   const cargarDatosUsuario = async (sesionActual: Session | null) => {
-    if (sesionActual) {
-      // Modificamos el select para incluir los nuevos campos
-      const { data } = await supabase
+    // Si la sesión es nula, limpiamos todo inmediatamente
+    if (!sesionActual) {
+      setPerfil(null);
+      setCargando(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
         .from('usuarios')
         .select('nombre_completo, rol, avatar_url, documento, codigo, carrera, telefono')
         .eq('id', sesionActual.user.id)
         .single();
       
+      if (error) throw error;
       setPerfil(data);
-    } else {
+    } catch (error) {
+      console.error("Error cargando perfil del usuario:", error);
+      // Si falla la consulta del perfil (ej. token inválido), limpiamos por seguridad
       setPerfil(null);
+    } finally {
+      setCargando(false);
     }
-    setCargando(false);
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      cargarDatosUsuario(session);
+    // 1. Carga Inicial Segura
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        supabase.auth.signOut();
+        setSession(null);
+        cargarDatosUsuario(null);
+      } else {
+        setSession(session);
+        cargarDatosUsuario(session);
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nuevaSesion) => {
-      setSession(nuevaSesion);
-      cargarDatosUsuario(nuevaSesion);
+    // 2. Escuchador de Eventos de Autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nuevaSesion) => {
+      if (event === 'SIGNED_OUT') {
+        // Cuando el Interceptor dispara el signOut, este evento lo escucha y limpia la UI
+        setSession(null);
+        setPerfil(null);
+        setCargando(false);
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setSession(nuevaSesion);
+        cargarDatosUsuario(nuevaSesion);
+      }
     });
 
     return () => subscription.unsubscribe();
